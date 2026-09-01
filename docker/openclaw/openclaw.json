@@ -30,11 +30,19 @@
     terminal: { enabled: false },
   },
 
+  // Claude is the LLM. Two auth routes exist for Anthropic; this is the API-key one, which the provider
+  // docs recommend for shared automation because it bills pay-as-you-go rather than drawing on a personal
+  // subscription's limits.
+  //
+  // The alternative is a Claude subscription setup-token: run `claude setup-token` on a machine with
+  // Claude Code installed, then inside the container
+  //   openclaw models auth login --provider anthropic --method setup-token
+  // which stores it in the gateway's auth profile instead of here.
   models: {
     mode: "merge",
     providers: {
-      openai: {
-        apiKey: "${OPENAI_API_KEY}",
+      anthropic: {
+        apiKey: "${ANTHROPIC_API_KEY}",
       },
     },
   },
@@ -67,7 +75,7 @@
       workspace: "/config/workspace",
       contextInjection: "always",
       model: {
-        primary: "openai/gpt-5.4",
+        primary: "anthropic/claude-opus-5",
         fallbacks: [],
       },
     },
