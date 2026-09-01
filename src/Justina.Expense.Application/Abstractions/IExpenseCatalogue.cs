@@ -37,29 +37,47 @@ public sealed record ExpenseCatalogue(
     /// </summary>
     public ExpenseCategory? FindCategory(string? name)
     {
-        if (string.IsNullOrWhiteSpace(name))
+        var candidate = Comparable(name);
+
+        if (candidate is null)
         {
             return null;
         }
 
-        var candidate = name.Trim();
-
         return Categories.FirstOrDefault(
-            category => string.Equals(category.Name.Trim(), candidate, StringComparison.OrdinalIgnoreCase));
+            category => string.Equals(Comparable(category.Name), candidate, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>Resolves a tax label the model answered with, on the same terms as <see cref="FindCategory"/>.</summary>
     public ExpenseTax? FindTax(string? label)
     {
-        if (string.IsNullOrWhiteSpace(label))
+        var candidate = Comparable(label);
+
+        if (candidate is null)
         {
             return null;
         }
 
-        var candidate = label.Trim();
-
         return Taxes.FirstOrDefault(
-            tax => string.Equals(tax.Label.Trim(), candidate, StringComparison.OrdinalIgnoreCase));
+            tax => string.Equals(Comparable(tax.Label), candidate, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Normalizes a name for comparison: trimmed, with runs of whitespace collapsed to one space.
+    ///
+    /// The collapse is not cosmetic. Real catalogues contain names like "Employee Monthly Personal
+    /// &#160;Expense" with a double space; the prompt shows that name with its whitespace collapsed, so
+    /// the model copies back the single-spaced form. Comparing raw would then fail to resolve a name the
+    /// model copied exactly as instructed.
+    /// </summary>
+    private static string? Comparable(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return string.Join(' ', value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
     }
 }
 

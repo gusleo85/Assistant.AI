@@ -1,0 +1,58 @@
+[
+    {
+        "id": "4839e181-5e4a-42da-8438-89ebae509656",
+        "name": "GST Yes 8",
+        "attribute": "8.00",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "id": "e236a4bb-f11d-4391-b501-54df9b13ee96",
+        "name": "GST Yes 10",
+        "attribute": "10.00",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "id": "5edb5297-7b21-4d4f-8d21-f7a264f166de",
+        "name": "GST No",
+        "attribute": "0.00",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "id": "5f965c38-dad2-438d-8b45-14efad2a3cdb",
+        "name": "GST 30",
+        "attribute": "30.00",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "id": "3ae8eb2b-fc41-45cf-8d1d-2d9b593d413a",
+        "name": "GST_2",
+        "attribute": "2.00",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "id": "a9e8917d-54bc-4444-b014-55d221ef693c",
+        "name": "GST9",
+        "attribute": "9.00",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "id": "e9097791-7bbb-4626-ba12-1d7159a3593c",
+        "name": "GST50",
+        "attribute": "5.00",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    }
+]

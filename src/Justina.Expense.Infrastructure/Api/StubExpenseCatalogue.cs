@@ -1,3 +1,7 @@
+using System.Globalization;
+using System.Reflection;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Justina.Expense.Application.Abstractions;
 using Justina.Expense.Application.Receipts;
 using Microsoft.Extensions.Logging;
@@ -5,60 +9,98 @@ using Microsoft.Extensions.Logging;
 namespace Justina.Expense.Infrastructure.Api;
 
 /// <summary>
-/// A fixed catalogue shaped like the one the Expense API returns, used while
-/// <see cref="ExpenseApiOptions.Mode"/> is <c>Stub</c>.
+/// One row of <c>GET /expense/v1/Categories/list/{organizationId}</c> or
+/// <c>/Taxes/list/{organizationId}</c>. Both endpoints return the same <c>ListItemResponse</c> shape, and
+/// <c>attribute</c> carries different data in each: for a category it is <c>IsAttachmentMandatory</c>
+/// ("True"/"False"), for a tax it is the rate ("9.00"). That overloading is the API's, not ours.
+/// </summary>
+public sealed record ExpenseListItem
+{
+    [JsonPropertyName("id")]
+    public Guid Id { get; init; }
+
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = string.Empty;
+
+    [JsonPropertyName("attribute")]
+    public string? Attribute { get; init; }
+
+    [JsonPropertyName("description")]
+    public string? Description { get; init; }
+
+    [JsonPropertyName("isDefault")]
+    public bool IsDefault { get; init; }
+}
+
+/// <summary>
+/// The company's real category and tax lists, captured from the dev tenant and embedded in this
+/// assembly, served while <see cref="ExpenseApiOptions.Mode"/> is <c>Stub</c>.
 ///
-/// It exists so the whole conversation — photo in, extracted, category and taxes constrained to a real
-/// list, shown, edited, confirmed — can be exercised before any JustLogin credential exists. The
-/// category names are the ones the Lambda's prompt names explicitly, so behaviour observed here is
-/// representative of the live lists rather than of invented data.
-///
-/// The identifiers are fixed rather than random: a stub that returned new GUIDs on every call would make
-/// a stored receipt's <c>CategoryId</c> stop resolving after a restart.
+/// Real data rather than tidy invented data on purpose: this tenant's list contains test entries
+/// ("AAA", "asd", "sss"), a category whose name is eighteen letters of "a", and tax names that disagree
+/// with their own rates. Prompt construction and name resolution have to survive that, and they only
+/// get to prove it against the thing they will actually meet.
 /// </summary>
 public sealed class StubExpenseCatalogue(ILogger<StubExpenseCatalogue> logger) : IExpenseCatalogue
 {
-    private static readonly ExpenseCatalogue Catalogue = Build();
+    private const string CategoriesResource = "Justina.Expense.Infrastructure.MockData.categories.json";
+    private const string TaxesResource = "Justina.Expense.Infrastructure.MockData.taxes.json";
+
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    private static readonly Lazy<ExpenseCatalogue> Catalogue = new(Build);
 
     public Task<ExpenseCatalogue> GetAsync(ExpenseTenant tenant, CancellationToken cancellationToken)
     {
-        logger.LogWarning(
-            "Expense catalogue is running in STUB mode: {CategoryCount} categories and {TaxCount} taxes " +
-            "come from fixed local data, not from the Expense API",
-            Catalogue.Categories.Count,
-            Catalogue.Taxes.Count);
+        ArgumentNullException.ThrowIfNull(tenant);
 
-        return Task.FromResult(Catalogue);
+        var catalogue = Catalogue.Value;
+
+        logger.LogWarning(
+            "STUB catalogue: {CategoryCount} categories and {TaxCount} taxes for organization " +
+            "{OrganizationId} come from embedded mock data, not from the Expense API",
+            catalogue.Categories.Count,
+            catalogue.Taxes.Count,
+            tenant.OrganizationId);
+
+        return Task.FromResult(catalogue);
     }
 
     private static ExpenseCatalogue Build()
     {
-        ExpenseCategory Category(string id, string name, string accountCode) =>
-            new(Guid.Parse(id), name, accountCode);
+        var categories = Read(CategoriesResource)
+            .Select(item => new ExpenseCategory(item.Id, item.Name))
+            .ToList();
 
-        ExpenseTax Tax(string id, string name, decimal rate) =>
-            new(Guid.Parse(id), name, rate, ReceiptExtractionPrompt.TaxLabel(name, rate));
+        var taxes = Read(TaxesResource)
+            .Select(item =>
+            {
+                // The rate arrives as the string the API rendered, and the label must reproduce that
+                // rendering exactly — it is the key the model's answer is matched against. Parsing to
+                // decimal and reformatting would turn "9.00" into "9" and break every match.
+                var rate = decimal.TryParse(
+                    item.Attribute,
+                    NumberStyles.Number,
+                    CultureInfo.InvariantCulture,
+                    out var parsed)
+                    ? parsed
+                    : 0m;
 
-        return new ExpenseCatalogue(
-            [
-                Category("11111111-0000-4000-8000-000000000001", "Meals and Entertainment", "6100"),
-                Category("11111111-0000-4000-8000-000000000002", "Medical Expense", "6110"),
-                Category("11111111-0000-4000-8000-000000000003", "Medicine Purchase", "6111"),
-                Category("11111111-0000-4000-8000-000000000004", "Accommodation Expense", "6200"),
-                Category("11111111-0000-4000-8000-000000000005", "Transportation", "6210"),
-                Category("11111111-0000-4000-8000-000000000006", "Airfare", "6211"),
-                Category("11111111-0000-4000-8000-000000000007", "Office Supplies", "6300"),
-                Category("11111111-0000-4000-8000-000000000008", "Telecommunication", "6310"),
-                Category("11111111-0000-4000-8000-000000000009", "Client Entertainment", "6400"),
-                Category("11111111-0000-4000-8000-00000000000a", "Training and Seminar", "6500"),
-                Category("11111111-0000-4000-8000-00000000000b", "Uncategorized", "6900"),
-            ],
-            [
-                // 9.00% rather than 9%: the live API renders the rate at the decimal scale it stores, and
-                // the label is matched as a string, so the stub must carry the same scale.
-                Tax("22222222-0000-4000-8000-000000000001", "GST", 9.00m),
-                Tax("22222222-0000-4000-8000-000000000002", "GST", 8.00m),
-                Tax("22222222-0000-4000-8000-000000000003", "GST", 7.00m),
-            ]);
+                var label = string.Concat(item.Name, " (", item.Attribute, "%)");
+
+                return new ExpenseTax(item.Id, item.Name, rate, label);
+            })
+            .ToList();
+
+        return new ExpenseCatalogue(categories, taxes);
+    }
+
+    private static IReadOnlyList<ExpenseListItem> Read(string resourceName)
+    {
+        using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName)
+            ?? throw new InvalidOperationException(
+                $"Embedded mock data '{resourceName}' is missing from {nameof(Justina.Expense.Infrastructure)}.");
+
+        return JsonSerializer.Deserialize<List<ExpenseListItem>>(stream, JsonOptions) ?? [];
     }
 }

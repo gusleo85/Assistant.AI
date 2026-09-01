@@ -14,6 +14,9 @@
          container image; no volume mount and no config path to get wrong. -->
     <EmbeddedResource Include="MockData\members.json" />
     <EmbeddedResource Include="MockData\channel-links.json" />
+    <EmbeddedResource Include="MockData\categories.json" />
+    <EmbeddedResource Include="MockData\taxes.json" />
+    <EmbeddedResource Include="MockData\organization.json" />
   </ItemGroup>
 
   <PropertyGroup>
