@@ -47,6 +47,13 @@ public sealed class ExpenseModelConfiguration : IModelConfiguration
             entity.PrimitiveCollection<IReadOnlyList<Guid>>("TaxIds")
                 .HasColumnName("TaxIds")
                 .UsePropertyAccessMode(PropertyAccessMode.Field);
+
+            // Stored rather than looked up on read. A catalogue can be renamed or a tax retired, and what
+            // the user was shown when they confirmed is a record of that moment — re-deriving it later
+            // would quietly rewrite history.
+            entity.PrimitiveCollection<IReadOnlyList<string>>("TaxLabels")
+                .HasColumnName("TaxLabels")
+                .UsePropertyAccessMode(PropertyAccessMode.Field);
             entity.Property(e => e.ExternalExpenseId).HasMaxLength(128);
             entity.Property(e => e.FailureReason).HasMaxLength(256);
             entity.Property(e => e.CreatedAtUtc).HasColumnType("datetime2");

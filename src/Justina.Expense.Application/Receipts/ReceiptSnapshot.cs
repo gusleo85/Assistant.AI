@@ -21,6 +21,13 @@ public sealed record ReceiptSnapshot(
     IReadOnlyList<ReceiptLineItemSnapshot> LineItems,
     Guid? CategoryId,
     IReadOnlyList<Guid> TaxIds,
+
+    /// <summary>
+    /// What each matched tax is called in the company's catalogue — "GST9 (9.00%)" — for the agent to
+    /// show beside the amount. An amount on its own hides which rate was matched, and a tax filed at the
+    /// wrong rate looks entirely normal afterwards; the name is what lets the user catch it.
+    /// </summary>
+    IReadOnlyList<string> Taxes,
     string? Location,
     Guid? CurrencyId,
     Guid? BatchId,
@@ -66,6 +73,7 @@ public sealed record ReceiptSnapshot(
                 .ToList(),
             receipt.CategoryId,
             receipt.TaxIds,
+            receipt.TaxLabels,
             receipt.Location,
             receipt.CurrencyId,
             receipt.BatchId,

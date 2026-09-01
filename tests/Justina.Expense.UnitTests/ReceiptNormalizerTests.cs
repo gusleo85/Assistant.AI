@@ -1,3 +1,4 @@
+using Justina.Expense.Application.Abstractions;
 using Justina.Expense.Application.Receipts;
 using Justina.Expense.Domain;
 using Shouldly;
@@ -194,5 +195,164 @@ public class ReceiptEditTranslatorTests
         result.Value.Count.ShouldBe(3);
         result.Value.Single(c => c.Field == ReceiptField.Date).DateValue.ShouldBe(new DateOnly(2026, 8, 30));
         result.Value.Single(c => c.Field == ReceiptField.Currency).StringValue.ShouldBe("IDR");
+    }
+}
+
+/// <summary>
+/// A receipt prints a tax amount, and often a rate, but the company's own tax names rarely resemble
+/// either. Matching by rate is arithmetic, so it belongs here rather than in a model's judgement.
+/// </summary>
+public class TaxRateMatchingTests
+{
+    private static readonly ExpenseTax Gst9 = new(Guid.NewGuid(), "GST9", 9.00m, "GST9 (9.00%)");
+    private static readonly ExpenseTax Gst8 = new(Guid.NewGuid(), "GST Yes 8", 8.00m, "GST Yes 8 (8.00%)");
+    private static readonly ExpenseTax Gst10 = new(Guid.NewGuid(), "GST Yes 10", 10.00m, "GST Yes 10 (10.00%)");
+
+    private static ExpenseCatalogue Catalogue(params ExpenseTax[] taxes) => new([], taxes, []);
+
+    [Theory]
+    [InlineData(20.40, 1.68, 8.97)]   // the Ya Kun receipt: rounding puts it just under 9
+    [InlineData(109.00, 9.00, 9.00)]
+    [InlineData(108.00, 8.00, 8.00)]
+    public void A_rate_is_derived_from_a_tax_inclusive_total(double total, double tax, double expected)
+    {
+        ReceiptNormalizer.DeriveTaxRate((decimal)total, (decimal)tax).ShouldBe((decimal)expected);
+    }
+
+    [Theory]
+    [InlineData(null, 1.68)]
+    [InlineData(20.40, null)]
+    [InlineData(20.40, 0.0)]
+    [InlineData(10.00, 10.00)]   // a tax equal to the total means the reading is wrong
+    [InlineData(5.00, 9.00)]     // a tax larger than the total, likewise
+    public void An_impossible_pair_derives_no_rate(double? total, double? tax)
+    {
+        ReceiptNormalizer.DeriveTaxRate((decimal?)total, (decimal?)tax).ShouldBeNull();
+    }
+
+    /// <summary>Receipts round to the cent, so 8.97% has to count as the 9.00% tax.</summary>
+    [Fact]
+    public void A_rate_within_tolerance_matches()
+    {
+        Catalogue(Gst9, Gst8, Gst10).FindTaxByRate(8.97m)!.Label.ShouldBe("GST9 (9.00%)");
+    }
+
+    [Fact]
+    public void A_rate_matching_nothing_resolves_to_nothing()
+    {
+        Catalogue(Gst9, Gst8, Gst10).FindTaxByRate(17.5m).ShouldBeNull();
+    }
+
+    /// <summary>
+    /// Two taxes within tolerance is a real ambiguity. Picking the nearer would be a coin flip dressed
+    /// up as a decision, and the user gets asked instead.
+    /// </summary>
+    [Fact]
+    public void An_ambiguous_rate_resolves_to_nothing()
+    {
+        var nearlyNine = new ExpenseTax(Guid.NewGuid(), "GST Nine", 9.10m, "GST Nine (9.10%)");
+
+        Catalogue(Gst9, nearlyNine).FindTaxByRate(9.05m).ShouldBeNull();
+    }
+
+    /// <summary>The end-to-end case: the label matched nothing, but the amounts settled it.</summary>
+    [Fact]
+    public void An_unmatched_label_still_resolves_by_rate()
+    {
+        var raw = new RawReceipt(
+            "Ya Kun Kaya Toast", "2025-06-19", "SGD", "20.40", "Meals", "ORDER NO: 8309", "1.68",
+            LineItems: null, Taxes: ["Inc 9% GST"]);
+
+        var normalized = ReceiptNormalizer.Normalize(raw, Catalogue(Gst9, Gst8, Gst10));
+
+        normalized.Fields.TaxIds.ShouldNotBeNull();
+        normalized.Fields.TaxIds!.ShouldHaveSingleItem().ShouldBe(Gst9.Id);
+    }
+
+    [Fact]
+    public void A_receipt_with_no_tax_resolves_no_tax()
+    {
+        var raw = new RawReceipt(
+            "Cafe", "2026-08-31", "SGD", "20.00", null, null, null, null, null);
+
+        var normalized = ReceiptNormalizer.Normalize(raw, Catalogue(Gst9));
+
+        normalized.Fields.TaxIds.ShouldBeEmpty();
+    }
+}
+
+/// <summary>
+/// The arithmetic outranks the model's label. This is the case that earned the rule.
+/// </summary>
+public class TaxLabelVersusRateTests
+{
+    private static readonly ExpenseTax Gst9 = new(Guid.NewGuid(), "GST9", 9.00m, "GST9 (9.00%)");
+    private static readonly ExpenseTax Gst8 = new(Guid.NewGuid(), "GST Yes 8", 8.00m, "GST Yes 8 (8.00%)");
+    private static readonly ExpenseTax GstZero = new(Guid.NewGuid(), "GST No", 0.00m, "GST No (0.00%)");
+
+    private static ExpenseCatalogue Catalogue() => new([], [Gst9, Gst8, GstZero], []);
+
+    private static RawReceipt Receipt(string? total, string? tax, params string[] labels) =>
+        new("Ya Kun Kaya Toast", "2025-06-19", "SGD", total, "Meals", "ORDER NO: 8309", tax,
+            LineItems: null, Taxes: labels);
+
+    /// <summary>
+    /// The real failure: 1.68 on 20.40 is 8.97%, but the model answered "GST Yes 8 (8.00%)" on wording
+    /// alone. Filing a 9% tax as 8% is worse than filing none, because nothing about it looks wrong later.
+    /// </summary>
+    [Fact]
+    public void A_label_that_contradicts_the_arithmetic_does_not_win()
+    {
+        var normalized = ReceiptNormalizer.Normalize(
+            Receipt("20.40", "1.68", "GST Yes 8 (8.00%)"),
+            Catalogue());
+
+        normalized.Fields.TaxIds!.ShouldHaveSingleItem().ShouldBe(Gst9.Id);
+    }
+
+    [Fact]
+    public void A_label_that_agrees_with_the_arithmetic_is_kept()
+    {
+        var normalized = ReceiptNormalizer.Normalize(
+            Receipt("20.40", "1.68", "GST9 (9.00%)"),
+            Catalogue());
+
+        normalized.Fields.TaxIds!.ShouldHaveSingleItem().ShouldBe(Gst9.Id);
+    }
+
+    /// <summary>No label at all, and the amounts still settle it.</summary>
+    [Fact]
+    public void The_amounts_alone_are_enough()
+    {
+        var normalized = ReceiptNormalizer.Normalize(Receipt("20.40", "1.68"), Catalogue());
+
+        normalized.Fields.TaxIds!.ShouldHaveSingleItem().ShouldBe(Gst9.Id);
+    }
+
+    /// <summary>
+    /// A rate the company does not define resolves to nothing, even when a label matched — the label is
+    /// not evidence once the arithmetic contradicts it.
+    /// </summary>
+    [Fact]
+    public void A_rate_the_company_does_not_define_resolves_to_nothing()
+    {
+        var normalized = ReceiptNormalizer.Normalize(
+            Receipt("117.50", "17.50", "GST Yes 8 (8.00%)"),
+            Catalogue());
+
+        normalized.Fields.TaxIds.ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// A zero-rated tax derives no rate, so the label is all there is — and it is trusted there.
+    /// </summary>
+    [Fact]
+    public void A_zero_rated_tax_still_resolves_by_label()
+    {
+        var normalized = ReceiptNormalizer.Normalize(
+            Receipt("20.00", "0", "GST No (0.00%)"),
+            Catalogue());
+
+        normalized.Fields.TaxIds!.ShouldHaveSingleItem().ShouldBe(GstZero.Id);
     }
 }

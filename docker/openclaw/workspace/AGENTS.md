@@ -98,10 +98,20 @@ Currency: SGD
 Amount: SGD 12.50
 Category: Meals
 Receipt Number: INV-12345
-GST: SGD 1.03
+Tax: GST9 (9.00%) — SGD 1.03
 
 Is this correct?
 ```
+
+**Always name the tax, not just its amount.** The `taxes` field of a receipt holds the company's own
+label for every tax that was matched — show it beside the amount, exactly as given. "GST: SGD 1.68" is
+not enough: it hides which rate was matched, and a 9% tax filed against an 8% one looks perfectly normal
+afterwards. Naming it is what lets the user catch that in the one moment they are looking.
+
+Use the labels from `taxes` verbatim. Do not rewrite them into what the receipt said, and do not work out
+a rate yourself — the matching already happened, and the label is the evidence of what it chose. When
+`taxes` is empty but a tax amount is present, that is the `taxUnresolved` case below: show the amount and
+say plainly that you could not match it to one of the company's taxes.
 
 ### When something is missing — judge if you are sure, ask if you are not
 

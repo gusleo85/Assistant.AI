@@ -24,6 +24,7 @@ public sealed class Receipt
     private readonly List<ReceiptLineItem> _lineItems = [];
     private readonly List<ReceiptEvent> _events = [];
     private readonly List<Guid> _taxIds = [];
+    private readonly List<string> _taxLabels = [];
 
     // EF Core materialization.
     private Receipt()
@@ -93,6 +94,12 @@ public sealed class Receipt
 
     /// <summary>Predefined taxes matched against the company's catalogue. Empty when none matched.</summary>
     public IReadOnlyList<Guid> TaxIds => _taxIds;
+
+    /// <summary>
+    /// The catalogue labels for <see cref="TaxIds"/>, positionally aligned, so the tax can be named to
+    /// the user. Empty when nothing matched, and never filled from the receipt's own wording.
+    /// </summary>
+    public IReadOnlyList<string> TaxLabels => _taxLabels;
 
     /// <summary>Where the receipt was issued, as printed. Carried through to the expense record.</summary>
     public string? Location { get; private set; }
@@ -301,10 +308,27 @@ public sealed class Receipt
         Location = fields.Location;
 
         _taxIds.Clear();
+        _taxLabels.Clear();
 
         if (fields.TaxIds is { Count: > 0 })
         {
-            _taxIds.AddRange(fields.TaxIds.Distinct());
+            // Ids and labels are paired before the duplicates are dropped, so removing an id removes its
+            // label with it. Distinct() over the two lists separately would silently shift every label
+            // after the first duplicate onto the wrong tax.
+            var labels = fields.TaxLabels;
+            var paired = fields.TaxIds
+                .Select((id, index) => (Id: id, Label: labels is not null && index < labels.Count ? labels[index] : null))
+                .DistinctBy(pair => pair.Id)
+                .ToList();
+
+            _taxIds.AddRange(paired.Select(pair => pair.Id));
+
+            // All or nothing: a partial set would leave some taxes named and others not, and the user
+            // cannot tell an unnamed tax from one whose name simply did not resolve.
+            if (paired.All(pair => !string.IsNullOrWhiteSpace(pair.Label)))
+            {
+                _taxLabels.AddRange(paired.Select(pair => pair.Label!));
+            }
         }
     }
 

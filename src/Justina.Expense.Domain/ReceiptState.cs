@@ -61,4 +61,14 @@ public sealed record ReceiptFields(
     Guid? CategoryId = null,
     IReadOnlyList<Guid>? TaxIds = null,
     string? Location = null,
-    Guid? CurrencyId = null);
+    Guid? CurrencyId = null,
+
+    /// <summary>
+    /// The catalogue's own label for each tax in <paramref name="TaxIds"/>, in the same order.
+    ///
+    /// Carried so a confirmation can name the tax it matched instead of showing a bare amount. A user
+    /// shown only "GST: SGD 1.68" cannot tell a 9% match from an 8% one — which is precisely the error
+    /// this is here to make visible. The label always comes from the catalogue, never from the receipt's
+    /// own wording, so what the user sees is the tax that will actually be filed.
+    /// </summary>
+    IReadOnlyList<string>? TaxLabels = null);

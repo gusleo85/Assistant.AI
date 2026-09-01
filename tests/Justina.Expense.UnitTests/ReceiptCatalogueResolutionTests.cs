@@ -133,3 +133,116 @@ public class ReceiptCatalogueResolutionTests
         receipt.CategoryId.ShouldBeNull();
     }
 }
+
+/// <summary>
+/// A matched tax carries its catalogue label, so the confirmation can name the tax rather than show a
+/// bare amount. The naming is the check: "GST: SGD 1.68" reads the same whether 9% or 8% was matched,
+/// and the wrong one is invisible once filed.
+/// </summary>
+public class TaxLabelTests
+{
+    private static readonly Guid GstNineId = Guid.Parse("33333333-0000-4000-8000-000000000009");
+    private static readonly Guid GstEightId = Guid.Parse("33333333-0000-4000-8000-000000000008");
+
+    private static readonly ExpenseCatalogue Catalogue = new(
+        [],
+        [
+            new ExpenseTax(GstNineId, "GST9", 9.00m, "GST9 (9.00%)"),
+            new ExpenseTax(GstEightId, "GST Yes 8", 8.00m, "GST Yes 8 (8.00%)"),
+        ],
+        []);
+
+    private static RawReceipt Raw(string amount, string taxAmount, params string[] taxes) =>
+        new(
+            Merchant: "Ya Kun Kaya Toast",
+            Date: "2023-06-19",
+            Currency: "SGD",
+            Amount: amount,
+            Category: null,
+            ReceiptNumber: "8309",
+            TaxAmount: taxAmount,
+            LineItems: null,
+            Taxes: taxes);
+
+    [Fact]
+    public void A_matched_tax_carries_the_catalogue_label_not_the_receipt_wording()
+    {
+        // The receipt says "Inc 9% GST"; the company calls it "GST9". What gets shown is the company's
+        // name, because that is the tax the expense will actually be filed against.
+        var normalized = ReceiptNormalizer.Normalize(Raw("20.40", "1.68", "Inc 9% GST"), Catalogue);
+
+        normalized.Fields.TaxIds.ShouldBe([GstNineId]);
+        normalized.Fields.TaxLabels.ShouldBe(["GST9 (9.00%)"]);
+    }
+
+    [Fact]
+    public void An_unmatched_tax_carries_no_label()
+    {
+        // 20.40 with 3.00 of tax derives 17.24%, which matches neither predefined rate.
+        var normalized = ReceiptNormalizer.Normalize(Raw("20.40", "3.00", "Service Tax"), Catalogue);
+
+        normalized.Fields.TaxIds.ShouldBeEmpty();
+        normalized.Fields.TaxLabels.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void The_label_survives_onto_the_receipt()
+    {
+        var receipt = Receipt.Create(Guid.NewGuid(), "media-1", null, DateTimeOffset.UtcNow, 1);
+        receipt.BeginExtraction(DateTimeOffset.UtcNow);
+
+        var normalized = ReceiptNormalizer.Normalize(Raw("20.40", "1.68", "Inc 9% GST"), Catalogue);
+        receipt.CompleteExtraction(normalized.Fields, normalized.LineItems, DateTimeOffset.UtcNow);
+
+        receipt.TaxLabels.ShouldBe(["GST9 (9.00%)"]);
+        ReceiptSnapshot.From(receipt).Taxes.ShouldBe(["GST9 (9.00%)"]);
+    }
+
+    [Fact]
+    public void A_duplicate_identifier_takes_its_label_with_it()
+    {
+        // Ids and labels must stay aligned through de-duplication. Were they de-duplicated separately,
+        // the second tax here would end up wearing the first one's name.
+        var fields = new ReceiptFields(
+            Merchant: "Ya Kun Kaya Toast",
+            Date: new DateOnly(2023, 6, 19),
+            Currency: "SGD",
+            Amount: 20.40m,
+            Category: null,
+            ReceiptNumber: null,
+            TaxAmount: 1.68m,
+            TaxIds: [GstNineId, GstNineId, GstEightId],
+            TaxLabels: ["GST9 (9.00%)", "GST9 (9.00%)", "GST Yes 8 (8.00%)"]);
+
+        var receipt = Receipt.Create(Guid.NewGuid(), "media-1", null, DateTimeOffset.UtcNow, 1);
+        receipt.BeginExtraction(DateTimeOffset.UtcNow);
+        receipt.CompleteExtraction(fields, [], DateTimeOffset.UtcNow);
+
+        receipt.TaxIds.ShouldBe([GstNineId, GstEightId]);
+        receipt.TaxLabels.ShouldBe(["GST9 (9.00%)", "GST Yes 8 (8.00%)"]);
+    }
+
+    [Fact]
+    public void Labels_that_do_not_line_up_with_the_identifiers_are_dropped_entirely()
+    {
+        // Half a set of names is worse than none: the user cannot tell an unnamed tax from one whose
+        // name failed to resolve, so nothing is shown rather than something possibly wrong.
+        var fields = new ReceiptFields(
+            Merchant: "Ya Kun Kaya Toast",
+            Date: new DateOnly(2023, 6, 19),
+            Currency: "SGD",
+            Amount: 20.40m,
+            Category: null,
+            ReceiptNumber: null,
+            TaxAmount: 1.68m,
+            TaxIds: [GstNineId, GstEightId],
+            TaxLabels: ["GST9 (9.00%)"]);
+
+        var receipt = Receipt.Create(Guid.NewGuid(), "media-1", null, DateTimeOffset.UtcNow, 1);
+        receipt.BeginExtraction(DateTimeOffset.UtcNow);
+        receipt.CompleteExtraction(fields, [], DateTimeOffset.UtcNow);
+
+        receipt.TaxIds.Count.ShouldBe(2);
+        receipt.TaxLabels.ShouldBeEmpty();
+    }
+}

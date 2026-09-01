@@ -70,6 +70,38 @@ public sealed record ExpenseCatalogue(
     }
 
     /// <summary>
+    /// Finds the predefined tax whose rate matches one derived from the amounts on the receipt.
+    ///
+    /// This exists because a receipt usually prints a tax amount and not a rate, and the label it does
+    /// print — a bare "GST" — is ambiguous when the company defines seven of them at different rates.
+    /// Asking a model to resolve that is asking it to do arithmetic and then guess; doing it here is
+    /// deterministic, testable, and wrong in ways that show up in a unit test rather than in production.
+    /// </summary>
+    /// <param name="ratePercent">The derived rate, as a percentage — 8.97 for 8.97%.</param>
+    /// <param name="tolerancePercent">
+    /// How far off the derived rate may be. Receipts round to the cent, so an exact match is not
+    /// realistic: 1.68 on a base of 18.72 is 8.974%, not 9%. Wide enough to absorb that, narrow enough
+    /// that neighbouring rates cannot both qualify.
+    /// </param>
+    public ExpenseTax? FindTaxByRate(decimal ratePercent, decimal tolerancePercent = 0.25m)
+    {
+        if (ratePercent <= 0m)
+        {
+            return null;
+        }
+
+        var candidates = Taxes
+            .Where(tax => Math.Abs(tax.Rate - ratePercent) <= tolerancePercent)
+            .OrderBy(tax => Math.Abs(tax.Rate - ratePercent))
+            .ToList();
+
+        // Two taxes within tolerance of the same derived rate is a genuine ambiguity, and picking the
+        // nearer one would be a coin flip dressed up as a decision. Better to resolve nothing and let
+        // the user be asked.
+        return candidates.Count == 1 ? candidates[0] : null;
+    }
+
+    /// <summary>
     /// Resolves an ISO-4217 code to the company's currency record. A code the company does not claim in
     /// resolves to nothing, which is the honest answer: the expense could not be filed in it anyway.
     /// </summary>

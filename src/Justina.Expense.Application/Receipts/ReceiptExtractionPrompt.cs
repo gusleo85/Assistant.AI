@@ -101,12 +101,17 @@ public static class ReceiptExtractionPrompt
                 .AppendLine("Taxes must each match one of the following predefined taxes, copied exactly:")
                 .AppendLine(string.Join(", ", taxes))
                 .AppendLine(
-                    "Return an empty list when the receipt shows no tax that matches one of them. " +
-                    "Recognise a tax written as \"GST\", \"GST 9%\" or \"GST (9.00%)\" as the same tax. " +
+                    "Match on the RATE, not on the wording. The names above are the company's own and " +
+                    "will often look nothing like the receipt: a receipt reading \"Inc 9% GST\", \"GST " +
+                    "9%\", \"9% GST\" or plain \"GST\" at nine percent all match a predefined tax whose " +
+                    "rate is 9.00, whatever that tax happens to be called. A tax printed as inclusive is " +
+                    "still a tax: report it. " +
                     "Where an amount is printed with no rate, derive the rate from the amount divided by " +
                     "the pre-tax base, where that base is the subtotal plus any service charge listed " +
-                    "above the tax line, and match the closest predefined tax. If none is close, return " +
-                    "an empty list. Report taxAmount separately as the amount printed on the receipt.");
+                    "above the tax line, and match the predefined tax with that rate. " +
+                    "Return an empty list only when the receipt genuinely shows no tax, or when its rate " +
+                    "matches none of the rates above. Report taxAmount separately as the amount printed " +
+                    "on the receipt.");
         }
 
         return builder.ToString().TrimEnd();

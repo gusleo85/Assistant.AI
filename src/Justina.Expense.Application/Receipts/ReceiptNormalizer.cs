@@ -40,24 +40,23 @@ public static class ReceiptNormalizer
         var currency = Currency(raw.Currency);
         var currencyId = catalogue?.FindCurrency(currency)?.Id;
 
-        var taxIds = (raw.Taxes ?? [])
-            .Select(label => catalogue?.FindTax(Text(label))?.Id)
-            .Where(id => id is not null)
-            .Select(id => id!.Value)
-            .Distinct()
-            .ToList();
+        var amount = PositiveAmount(raw.Amount);
+        var taxAmount = NonNegativeAmount(raw.TaxAmount);
+
+        var taxes = ResolveTaxes(raw, catalogue, amount, taxAmount);
 
         var fields = new ReceiptFields(
             Merchant: Text(raw.Merchant),
             Date: Date(raw.Date),
             Currency: currency,
-            Amount: PositiveAmount(raw.Amount),
+            Amount: amount,
             Category: category,
             ReceiptNumber: Text(raw.ReceiptNumber),
-            TaxAmount: NonNegativeAmount(raw.TaxAmount),
+            TaxAmount: taxAmount,
             CategoryId: categoryId,
-            TaxIds: taxIds,
-            CurrencyId: currencyId);
+            TaxIds: taxes.Select(tax => tax.Id).ToList(),
+            CurrencyId: currencyId,
+            TaxLabels: taxes.Select(tax => tax.Label).ToList());
 
         var lineItems = (raw.LineItems ?? [])
             .Select(LineItem)
@@ -66,6 +65,93 @@ public static class ReceiptNormalizer
             .ToList();
 
         return new NormalizedReceipt(fields, lineItems);
+    }
+
+    /// <summary>
+    /// Decides which of the company's predefined taxes a receipt carries.
+    ///
+    /// <para>
+    /// The amounts win over the label whenever a rate can be derived from them. That ordering was earned:
+    /// a receipt reading "Inc 9% GST" for 1.68 on 20.40 was matched by the model to "GST Yes 8 (8.00%)"
+    /// purely on the wording, when the arithmetic says 8.97% and the company defines a 9.00% tax. A tax
+    /// filed against the wrong rate is worse than one left unresolved, because nothing about it looks
+    /// wrong afterwards.
+    /// </para>
+    ///
+    /// <para>
+    /// The label is still used where arithmetic cannot help — a zero-rated tax, or a receipt that names a
+    /// tax without printing its amount — and a label whose rate contradicts the arithmetic is dropped
+    /// rather than trusted.
+    /// </para>
+    /// </summary>
+    /// <returns>
+    /// The matched catalogue records, not just their ids: the label travels with the id so the user can
+    /// be shown which tax was chosen, in the catalogue's own words.
+    /// </returns>
+    private static List<ExpenseTax> ResolveTaxes(
+        RawReceipt raw,
+        ExpenseCatalogue? catalogue,
+        decimal? amount,
+        decimal? taxAmount)
+    {
+        if (catalogue is null)
+        {
+            return [];
+        }
+
+        var byLabel = (raw.Taxes ?? [])
+            .Select(label => catalogue.FindTax(Text(label)))
+            .Where(tax => tax is not null)
+            .Select(tax => tax!)
+            .DistinctBy(tax => tax.Id)
+            .ToList();
+
+        // Several taxes on one receipt is beyond what a single derived rate can express — 9% plus 7% and
+        // 16% flat imply the same total. Where the labels resolved to more than one, they are the better
+        // evidence and the arithmetic stands aside.
+        if (byLabel.Count > 1)
+        {
+            return byLabel;
+        }
+
+        var derivedRate = DeriveTaxRate(amount, taxAmount);
+
+        if (derivedRate is { } rate)
+        {
+            var byRate = catalogue.FindTaxByRate(rate);
+
+            if (byRate is not null)
+            {
+                return [byRate];
+            }
+
+            // The arithmetic is sound but matches nothing the company defines. A label that disagrees
+            // with it is not evidence of anything, so resolve nothing and let the user be asked.
+            var labelled = byLabel.FirstOrDefault();
+
+            return labelled is not null && Math.Abs(labelled.Rate - rate) <= 0.25m
+                ? [labelled]
+                : [];
+        }
+
+        return byLabel;
+    }
+
+    /// <summary>
+    /// The rate a printed tax amount implies, as a percentage.
+    ///
+    /// A receipt total is normally tax-inclusive, so the base is the total less the tax. Returns null
+    /// when the numbers cannot support a rate — no amounts, a tax of zero, or a tax at least as large as
+    /// the total, which means the reading is wrong rather than the rate unusual.
+    /// </summary>
+    public static decimal? DeriveTaxRate(decimal? total, decimal? taxAmount)
+    {
+        if (total is not { } gross || taxAmount is not { } tax || tax <= 0m || gross <= tax)
+        {
+            return null;
+        }
+
+        return decimal.Round(tax / (gross - tax) * 100m, 2, MidpointRounding.ToEven);
     }
 
     /// <summary>
