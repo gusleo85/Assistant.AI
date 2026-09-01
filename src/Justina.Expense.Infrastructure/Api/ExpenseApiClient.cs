@@ -33,12 +33,65 @@ public sealed class ExpenseApiOptions
     public const string ModeKey = "Mode";
 
     /// <summary>
-    /// Defaults to <see cref="ExpenseApiMode.Stub"/> so a missing configuration can never accidentally
-    /// point a half-configured build at the real expense system.
+    /// The default for every seam. Defaults to <see cref="ExpenseApiMode.Stub"/> so a missing
+    /// configuration can never accidentally point a half-configured build at the real expense system.
     /// </summary>
     public ExpenseApiMode Mode { get; set; } = ExpenseApiMode.Stub;
 
+    /// <summary>
+    /// Per-seam overrides. Each falls back to <see cref="Mode"/> when unset, so the catalogue can be
+    /// live against the real API while submission is still stubbed — which is the order these will
+    /// actually go live in, since reading a category list needs far less than filing an expense does.
+    /// </summary>
+    public ExpenseApiMode? CatalogueMode { get; set; }
+
+    public ExpenseApiMode? TenantMode { get; set; }
+
+    public ExpenseApiMode? SubmissionMode { get; set; }
+
+    public ExpenseApiMode ResolvedCatalogueMode => CatalogueMode ?? Mode;
+
+    public ExpenseApiMode ResolvedTenantMode => TenantMode ?? Mode;
+
+    public ExpenseApiMode ResolvedSubmissionMode => SubmissionMode ?? Mode;
+
     public string BaseUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Category list, with <c>{0}</c> replaced by the organization id. This route takes the organization
+    /// in the path and never reads the token's company claim, so a system token is enough — no
+    /// company-scoped token is needed to read a catalogue.
+    /// </summary>
+    public string CategoriesPath { get; set; } = "expense/v1/Categories/list/{0}";
+
+    public string TaxesPath { get; set; } = "expense/v1/Taxes/list/{0}";
+
+    /// <summary>
+    /// How long a company's catalogue is reused. The Lambda re-reads it per event because it is
+    /// short-lived; Justina is long-lived and would otherwise re-read it for every photo.
+    /// </summary>
+    public int CatalogueCacheMinutes { get; set; } = 10;
+
+    /// <summary>
+    /// The organization a live deployment acts for while member lookup by phone or email does not exist
+    /// (see plan risk R12). Required when the tenant seam is Live.
+    ///
+    /// Held as strings, not <see cref="Guid"/>: these arrive as environment variables that compose
+    /// supplies as "" when unset, and binding "" to a Guid throws during startup rather than leaving the
+    /// value empty. <see cref="OrganizationId"/> and <see cref="MemberId"/> do the parsing.
+    /// </summary>
+    public string ConfiguredOrganizationId { get; set; } = string.Empty;
+
+    public string ConfiguredMemberId { get; set; } = string.Empty;
+
+    public string ConfiguredCompanyId { get; set; } = string.Empty;
+
+    public Guid? OrganizationId => Parse(ConfiguredOrganizationId);
+
+    public Guid? MemberId => Parse(ConfiguredMemberId);
+
+    private static Guid? Parse(string value) =>
+        Guid.TryParse(value, out var parsed) && parsed != Guid.Empty ? parsed : null;
 
     /// <summary>From configuration only; never logged and never sent to the agent layer (§38).</summary>
     public string ApiKey { get; set; } = string.Empty;

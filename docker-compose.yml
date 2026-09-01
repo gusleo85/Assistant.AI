@@ -48,13 +48,32 @@ services:
       WhatsApp__PhoneNumberId: ${WHATSAPP_PHONE_NUMBER_ID:-}
       WhatsApp__AppSecret: ${WHATSAPP_APP_SECRET:-}
       WhatsApp__WebhookVerifyToken: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-}
+      # Stub serves the catalogue, tenant and submission seams from mock data; Live calls the Expense
+      # API. Per-seam overrides (ExpenseApi__CatalogueMode and friends) are read too — see .env.example.
+      ExpenseApi__Mode: ${EXPENSE_API_MODE:-Stub}
       ExpenseApi__BaseUrl: ${EXPENSE_API_URL:-}
       ExpenseApi__ApiKey: ${EXPENSE_API_KEY:-}
+      ExpenseApi__ConfiguredOrganizationId: ${EXPENSE_ORGANIZATION_ID:-}
+      ExpenseApi__ConfiguredMemberId: ${EXPENSE_MEMBER_ID:-}
       RecruitmentApi__BaseUrl: ${RECRUITMENT_API_URL:-}
       RecruitmentApi__ApiKey: ${RECRUITMENT_API_KEY:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # The gateway downloads inbound attachments before the agent runs and stages them in its workspace,
+      # so there is no channel media id left to fetch by. This is where that staging area is mounted.
+      # Paths outside it are refused; see StagedMediaReader.
+      # Mounted at the identical path the gateway uses, so a path the agent passes needs no translation.
+      StagedMedia__RootPath: /config/workspace/media/inbound
     volumes:
       - justina-media:/var/justina/media
+      # Read-only, and only the inbound attachment directory — not the whole gateway state volume, which
+      # also holds its sessions, SQLite databases and resolved config. Justina needs the bytes of a file
+      # the user just sent and nothing else.
+      - type: volume
+        source: openclaw-config
+        target: /config/workspace/media/inbound
+        read_only: true
+        volume:
+          subpath: workspace/media/inbound
     networks: [justina-network]
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health/live || exit 1"]

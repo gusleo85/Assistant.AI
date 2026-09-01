@@ -388,17 +388,40 @@ Plan: `plan/expense-catalogue-and-submission.md`. Contract sources: `C:\git\Rece
 - [x] `ExpenseApi:Mode` flag; stub catalogue, tenant resolver and submission client
 - [x] Stub mode refuses to start under `ASPNETCORE_ENVIRONMENT=Production`
 - [x] 18 new tests: prompt composition, injection inside a category name, caps, name/label resolution
-- [x] Verified: build 0 warnings, 181 tests pass, container healthy, migration applied at startup,
+- [x] Mock data captured from the dev tenant: member, channel link, 31 categories, 7 taxes,
+      organization — embedded resources, served by the stub seams
+- [x] Verified: build 0 warnings, 215 tests pass, container healthy, migration applied at startup,
       tool API still 401s without a key
-- [ ] A receipt driven end to end through Stub mode — **needs channel media; not yet exercised**
+- [x] **A real Telegram receipt driven end to end**, 2026-09-01 08:41 UTC. Telegram user `646882196`
+      resolved to khinleo / organization `1ba47eac…`; 31 categories and 7 taxes loaded; `gpt-4.1`
+      extracted one receipt from the photo; the model picked "Meals and Entertainment" out of a
+      catalogue containing 22 junk entries, and it resolved to the correct id
+      `279555fd-5119-4d3c-b94d-88d5d03cceb5`. Receipt reached `WaitingConfirmation`.
+      Two observations from that run: currency did not resolve on an Indonesian receipt
+      (`missingField: currency`, amount 102000), and `taxIds` is correctly empty for a non-SG receipt.
 
-### Live mode — not started, blocked
+### Swappable seams (mock ↔ real)
+- [x] Three independent seams — catalogue, tenant, submission — chosen from configuration alone:
+      `ExpenseApi__Mode`, with `CatalogueMode` / `TenantMode` / `SubmissionMode` overriding per seam
+- [x] Startup validation: any seam on Stub under Production is a startup error, as is a Live seam
+      with no `BaseUrl`, or `TenantMode=Live` without a configured organization and member
+- [x] `ExpenseCatalogueClient` — the real catalogue call, against the verified
+      `/Categories/list/{organizationId}` and `/Taxes/list/{organizationId}` routes
+- [x] `CachingExpenseCatalogue` — wraps either source, keyed by organization, never caches an empty
+      catalogue
+- [x] `ConfiguredExpenseTenantResolver` — the live tenant seam as it can honestly be built today:
+      one configured company, since member lookup does not exist (R12)
+- [x] 7 tests against a stub server covering the live path, cache reuse, organization isolation and
+      every failure mode degrading to an empty catalogue
+
+### Live mode — remaining
+- [ ] Point `ExpenseApi__CatalogueMode=Live` at the dev API with a real token — **needs credentials**
 - [ ] Copy `JustLogin.Identity.SDK` source (net10 csproj only), `nuget.config` with a placeholder feed
 - [ ] Verify the five JustLogin packages restore and run on net10 — **needs the feed credential**
-- [ ] Live catalogue client + per-organization cache
-- [ ] Live tenant resolver (WhatsApp phone; Telegram link step)
+- [ ] OAuth token provider (system token) to replace the static bearer
+- [ ] Real tenant resolution: WhatsApp phone lookup, Telegram link step — **blocked on R12**
 - [ ] Switch submission to `POST /expense/v1/Expenses` + `POST /Expenses/{id}/receipt/upload`
-      rather than the Lambda's scan/update path — **decision pending**
+      rather than the Lambda's scan/update path — **blocked on R13**
 
 ## Open blockers
 

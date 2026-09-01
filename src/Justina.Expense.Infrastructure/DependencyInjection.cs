@@ -2,12 +2,28 @@ using Justina.Core.Infrastructure.Persistence;
 using Justina.Expense.Application.Abstractions;
 using Justina.Expense.Infrastructure.Api;
 using Justina.Expense.Infrastructure.Persistence;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace Justina.Expense.Infrastructure;
 
+/// <summary>
+/// Wires the Expense infrastructure. Three seams — catalogue, tenant, submission — each choose a mock or
+/// a real implementation from configuration alone:
+///
+/// <code>
+/// ExpenseApi__Mode=Stub                 all three mocked (the default)
+/// ExpenseApi__Mode=Live                 all three against the Expense API
+/// ExpenseApi__CatalogueMode=Live        one seam at a time, the rest follow Mode
+/// </code>
+///
+/// Nothing above this class knows which is in use: the handlers depend on
+/// <see cref="IExpenseCatalogue"/>, <see cref="IExpenseTenantResolver"/> and
+/// <see cref="IExpenseApiClient"/>, and the swap is a restart with different configuration.
+/// </summary>
 public static class ExpenseInfrastructureServiceCollectionExtensions
 {
     public static IServiceCollection AddExpenseInfrastructure(
@@ -17,70 +33,142 @@ public static class ExpenseInfrastructureServiceCollectionExtensions
         var section = configuration.GetSection(ExpenseApiOptions.SectionName);
         services.Configure<ExpenseApiOptions>(section);
 
+        var options = section.Get<ExpenseApiOptions>() ?? new ExpenseApiOptions();
+
         services.AddSingleton<IModelConfiguration, ExpenseModelConfiguration>();
         services.AddScoped<IReceiptRepository, ReceiptRepository>();
+        services.TryAddSingleton<IMemoryCache, MemoryCache>();
 
-        var mode = section.GetValue(ExpenseApiOptions.ModeKey, ExpenseApiMode.Stub);
+        Validate(options, configuration);
 
-        if (mode == ExpenseApiMode.Stub)
-        {
-            // A stub that reached Production would tell users their expenses were filed when nothing left
-            // the process. Refusing to start is the only failure mode here that cannot be missed.
-            var environment = configuration["ASPNETCORE_ENVIRONMENT"] ?? "Production";
+        AddCatalogue(services, options);
+        AddTenantResolver(services, options);
+        AddSubmissionClient(services, options);
 
-            if (string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException(
-                    $"{ExpenseApiOptions.SectionName}:Mode is 'Stub' but the environment is 'Production'. " +
-                    "Stub mode records submissions locally and never contacts the Expense API. Set " +
-                    $"{ExpenseApiOptions.SectionName}__Mode=Live with real credentials, or run outside Production.");
-            }
-
-            services.AddSingleton<IExpenseCatalogue, StubExpenseCatalogue>();
-            services.AddScoped<IExpenseTenantResolver, StubExpenseTenantResolver>();
-            services.AddScoped<IExpenseApiClient, StubExpenseApiClient>();
-
-            return services;
-        }
-
-        // Live mode: the submission client exists and targets a provisional contract (plan risk R1), so it
-        // is wired up and stays compiled and testable. The catalogue and tenant resolvers against
-        // JustLogin are not written yet, so startup still refuses — naming exactly what is missing beats
-        // starting up and filing every expense with no category against an unknown company.
-        services.AddLiveExpenseApiClient();
-
-        throw new InvalidOperationException(
-            $"{ExpenseApiOptions.SectionName}:Mode is 'Live', but the live expense catalogue and tenant " +
-            "resolver are not implemented yet: they need the JustLogin identity credentials and the " +
-            "member-lookup contract. Use Mode=Stub until those land.");
+        return services;
     }
 
-    private static IServiceCollection AddLiveExpenseApiClient(
-        this IServiceCollection services)
+    /// <summary>
+    /// Fails at startup rather than at the first receipt. A stub that reached Production would tell users
+    /// their expenses were filed when nothing left the process; a live seam with no address or credential
+    /// would fail every receipt in a way that reads like an outage.
+    /// </summary>
+    private static void Validate(ExpenseApiOptions options, IConfiguration configuration)
     {
+        var environment = configuration["ASPNETCORE_ENVIRONMENT"] ?? "Production";
+        var isProduction = string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase);
+
+        var stubbed = new List<string>();
+
+        if (options.ResolvedCatalogueMode == ExpenseApiMode.Stub)
+        {
+            stubbed.Add(nameof(options.CatalogueMode));
+        }
+
+        if (options.ResolvedTenantMode == ExpenseApiMode.Stub)
+        {
+            stubbed.Add(nameof(options.TenantMode));
+        }
+
+        if (options.ResolvedSubmissionMode == ExpenseApiMode.Stub)
+        {
+            stubbed.Add(nameof(options.SubmissionMode));
+        }
+
+        if (isProduction && stubbed.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"{ExpenseApiOptions.SectionName}: {string.Join(", ", stubbed)} resolve to 'Stub' but the " +
+                "environment is 'Production'. Stub seams serve local mock data and never contact the " +
+                "Expense API. Set them to Live with real credentials, or run outside Production.");
+        }
+
+        var live =
+            options.ResolvedCatalogueMode == ExpenseApiMode.Live
+            || options.ResolvedSubmissionMode == ExpenseApiMode.Live;
+
+        if (live && string.IsNullOrWhiteSpace(options.BaseUrl))
+        {
+            throw new InvalidOperationException(
+                $"{ExpenseApiOptions.SectionName}:BaseUrl is required when a seam is Live " +
+                "(for example https://apis.justlogindevelopment.xyz).");
+        }
+
+        if (options.ResolvedTenantMode == ExpenseApiMode.Live
+            && (options.OrganizationId is null || options.MemberId is null))
+        {
+            throw new InvalidOperationException(
+                $"{ExpenseApiOptions.SectionName}:ConfiguredOrganizationId and ConfiguredMemberId are " +
+                "required when TenantMode is Live. Member lookup by phone or email does not exist in " +
+                "expense-api, so a live deployment serves one configured company until it does.");
+        }
+    }
+
+    private static void AddCatalogue(IServiceCollection services, ExpenseApiOptions options)
+    {
+        if (options.ResolvedCatalogueMode == ExpenseApiMode.Stub)
+        {
+            services.AddSingleton<StubExpenseCatalogue>();
+            services.AddSingleton<IExpenseCatalogue>(provider => new CachingExpenseCatalogue(
+                provider.GetRequiredService<StubExpenseCatalogue>(),
+                provider.GetRequiredService<IMemoryCache>(),
+                provider.GetRequiredService<IOptions<ExpenseApiOptions>>()));
+
+            return;
+        }
+
+        services
+            .AddHttpClient<ExpenseCatalogueClient>((provider, client) =>
+                Configure(client, provider.GetRequiredService<IOptions<ExpenseApiOptions>>().Value))
+            .AddStandardResilienceHandler();
+
+        services.AddSingleton<IExpenseCatalogue>(provider => new CachingExpenseCatalogue(
+            provider.GetRequiredService<ExpenseCatalogueClient>(),
+            provider.GetRequiredService<IMemoryCache>(),
+            provider.GetRequiredService<IOptions<ExpenseApiOptions>>()));
+    }
+
+    private static void AddTenantResolver(IServiceCollection services, ExpenseApiOptions options)
+    {
+        if (options.ResolvedTenantMode == ExpenseApiMode.Stub)
+        {
+            services.AddScoped<IExpenseTenantResolver, StubExpenseTenantResolver>();
+            return;
+        }
+
+        services.AddScoped<IExpenseTenantResolver, ConfiguredExpenseTenantResolver>();
+    }
+
+    private static void AddSubmissionClient(IServiceCollection services, ExpenseApiOptions options)
+    {
+        if (options.ResolvedSubmissionMode == ExpenseApiMode.Stub)
+        {
+            services.AddScoped<IExpenseApiClient, StubExpenseApiClient>();
+            return;
+        }
+
         services
             .AddHttpClient<IExpenseApiClient, ExpenseApiClient>((provider, client) =>
-            {
-                var options = provider.GetRequiredService<IOptions<ExpenseApiOptions>>().Value;
-
-                if (!string.IsNullOrWhiteSpace(options.BaseUrl))
-                {
-                    client.BaseAddress = new Uri($"{options.BaseUrl.TrimEnd('/')}/");
-                }
-
-                client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
-
-                if (!string.IsNullOrWhiteSpace(options.ApiKey))
-                {
-                    client.DefaultRequestHeaders.TryAddWithoutValidation(
-                        options.ApiKeyHeader,
-                        $"{options.ApiKeyPrefix}{options.ApiKey}");
-                }
-            })
+                Configure(client, provider.GetRequiredService<IOptions<ExpenseApiOptions>>().Value))
             // Retries transient failures only. The submission carries an idempotency key, so a retry that
             // the API already processed resolves to the same expense rather than a second one (§33).
             .AddStandardResilienceHandler();
+    }
 
-        return services;
+    private static void Configure(HttpClient client, ExpenseApiOptions options)
+    {
+        if (!string.IsNullOrWhiteSpace(options.BaseUrl))
+        {
+            client.BaseAddress = new Uri($"{options.BaseUrl.TrimEnd('/')}/");
+        }
+
+        client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+
+        if (!string.IsNullOrWhiteSpace(options.ApiKey))
+        {
+            client.DefaultRequestHeaders.TryAddWithoutValidation(
+                options.ApiKeyHeader,
+                $"{options.ApiKeyPrefix}{options.ApiKey}");
+        }
     }
 }
