@@ -25,7 +25,7 @@ public class StubExpenseCatalogueTests
     {
         var catalogue = await LoadAsync();
 
-        catalogue.Categories.Count.ShouldBe(31);
+        catalogue.Categories.Count.ShouldBe(15);
         catalogue.Taxes.Count.ShouldBe(7);
     }
 
@@ -89,8 +89,12 @@ public class StubExpenseCatalogueTests
         prompt.ShouldContain("Meals and Entertainment");
         prompt.ShouldContain("GST9 (9.00%)");
 
-        // The junk entries this tenant carries reach the model too — there is nothing here that filters
-        // them, and pretending otherwise in a test would hide it.
-        prompt.ShouldContain("AAA");
+        // Every category name in the fixture becomes a candidate the model may classify a receipt as, so
+        // test entries are not cosmetic: a lunch bill could be filed against "test". The fixture was
+        // curated for that reason, and this asserts it stays curated.
+        foreach (var junk in new[] { "AAA", "asdasd", "dasdsad", "unlink payelement", "sss", "haab" })
+        {
+            prompt.ShouldNotContain(junk, Case.Insensitive);
+        }
     }
 }
