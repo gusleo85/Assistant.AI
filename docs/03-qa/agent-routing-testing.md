@@ -28,7 +28,7 @@ recruitment.search
 
 ## How routing is decided
 
-Four prompts, all in `docker/openclaw/agents/`:
+Four prompts, all in `docker/openclaw/workspace/`:
 
 | File | Role |
 |---|---|
@@ -270,9 +270,9 @@ no HTTP call at all — it returns `not_available` unconditionally.
 - **Routing accuracy as a guaranteed number.** It is model behaviour. The protocol above samples it;
   it does not bound it. Report observed rates, never a claimed accuracy.
 - **The OpenClaw side of routing.** Whether the pinned image loads
-  `docker/openclaw/agents/*.md` the way `openclaw.json.template` assumes is unverified (plan risk R3).
+  `docker/openclaw/workspace/AGENTS.md` the way `openclaw.json.template` assumes is unverified (plan risk R3).
   If every message reaches the same agent regardless of content, suspect the agent registration before
   the prompts.
 - **Automated routing regression.** There is no test project for it. Until there is, this table is
-  manual work that must be re-run whenever a prompt in `docker/openclaw/agents/` changes — see
+  manual work that must be re-run whenever a prompt in `docker/openclaw/workspace/` changes — see
   [regression-testing.md](regression-testing.md).

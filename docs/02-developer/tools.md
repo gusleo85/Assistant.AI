@@ -1,8 +1,8 @@
 # The Tool API
 
 The only surface the AI layer can act through. Eight `POST` endpoints under `/tools`, defined in
-`src/Justina.Api/Tools/ToolEndpoints.cs` and declared to agents in
-`docker/openclaw/tools/justina-tools.json`.
+`src/Justina.Api/Tools/ToolEndpoints.cs`. MCP tool definitions live in
+`src/Justina.Api/Tools/JustinaMcpTools.cs`.
 
 ## Authentication
 
@@ -155,3 +155,61 @@ These are a contract. The agent relays them, so they never carry secrets or inte
 2. Add an endpoint in `ToolEndpoints`, translating the contract and nothing more — no business logic.
 3. Declare it in `justina-tools.json` with a description written for the model.
 4. Tell the relevant agent prompt when to use it.
+
+---
+
+## MCP — the transport OpenClaw actually uses
+
+OpenClaw has no configuration for calling a plain HTTP JSON API. Its only supported route to an external
+tool is an **MCP server**, so `justina-app` serves MCP over Streamable HTTP at **`/mcp`**, implemented in
+`src/Justina.Api/Tools/JustinaMcpTools.cs` with `ModelContextProtocol.AspNetCore`.
+
+Both transports funnel into the **same** commands and queries, so authorization, validation, workflow
+state and idempotency cannot drift apart between them. `/mcp` is guarded by the same
+`X-Justina-Tool-Key` header and is likewise returned as `404` by NGINX.
+
+### Tool names
+
+MCP names use underscores:
+
+```text
+justina_session_context              justina_expense_confirm_receipt
+justina_expense_receive_media        justina_expense_cancel_receipt
+justina_expense_get_receipt          justina_expense_retry_submission
+justina_expense_edit_receipt         justina_recruitment_search_candidates
+```
+
+Each returns the same `{ ok, data, error }` envelope as a JSON string, so a refusal arrives as data the
+agent relays rather than as a protocol fault.
+
+### The envelope is arguments, not headers
+
+MCP carries only static headers, so `channel`, `userId` and `conversationId` are **tool arguments**.
+Capabilities are still resolved from the database — see the identity caveat in
+[openclaw.md](openclaw.md#known-limitation-agent-supplied-identity).
+
+### Safety annotations
+
+Every tool declares `ReadOnly` / `Destructive` / `Idempotent` / `OpenWorld`. Without them the gateway
+reports *"tools have no safety annotations; calls will require interactive approval"* and prompts a human
+before each call, which makes the assistant unusable. Read-only queries are marked `ReadOnly = true`;
+`confirm_receipt` and `retry_submission` are `Idempotent = true` because they genuinely are.
+
+### Probing it by hand
+
+```bash
+docker exec justina-app sh -c 'curl -s -X POST http://localhost:8080/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "X-Justina-Tool-Key: $ToolApi__SharedSecret" \
+  -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{}}"'
+
+docker exec justina-openclaw openclaw mcp probe justina   # expect: justina: 8 tools
+```
+
+### Adding a tool
+
+Add the command or query and register its handler, then add a method to `JustinaMcpTools` with
+`[McpServerTool]`, a `[Description]` written for the model, and the right safety annotations. Add the REST
+endpoint too if you want it testable with `curl`. Discovery is by assembly scan — there is no list to
+update — and finally teach `docker/openclaw/workspace/AGENTS.md` when to use it.

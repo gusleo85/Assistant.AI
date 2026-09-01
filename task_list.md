@@ -31,8 +31,8 @@ those are `[~]`, not `[x]`.
 
 - [x] OpenClaw architecture (Node.js gateway, channel plugins, `openclaw.json`, WS control plane)
 - [x] OpenAI direct PDF input support and limits (100 pages / 32 MB)
-- [ ] **Spike:** how custom tools register with OpenClaw (MCP vs skill vs plugin) — risk R3
-- [ ] **Spike:** exact OpenClaw container image/tag, volumes, config mount
+- [x] **Spike:** custom tools register as MCP servers — R3 resolved
+- [x] **Spike:** OpenClaw 2026.8.1, `OPENCLAW_CONFIG_PATH` + `OPENCLAW_STATE_DIR`, volume seeded and chowned to uid 1000
 - [ ] **Spike:** OpenAI structured-output schema and direct-PDF call shape against the live API
 
 ### 0.3 Plan document (§43)
@@ -97,7 +97,7 @@ those are `[~]`, not `[x]`.
 - [x] `/health/live` and `/health/ready` endpoints
 - [x] `.env.example` with every variable and no real secrets
 - [x] Tool API not exposed publicly (NGINX returns 404 for `/tools/`)
-- [~] Service-name connectivity verified end to end — **stack not started; SQL Server image not pulled**
+- [x] Service-name connectivity verified end to end (four services healthy; ARM64 overlay required)
 - [x] How to retrieve the ngrok public URL, documented
 - [ ] `docker-compose.override.yml` for local development
 
@@ -117,7 +117,7 @@ those are `[~]`, not `[x]`.
 - [x] `SqlServerIdempotencyStore`
 - [x] `SqlServerInboundMessageDeduplicator`
 - [x] `EfUnitOfWork` mapping concurrency and uniqueness violations to typed conflicts
-- [~] Migrations applied against a real SQL Server — **not run**
+- [x] Migrations applied against a running database (Azure SQL Edge on ARM64)
 
 ---
 
@@ -221,7 +221,7 @@ those are `[~]`, not `[x]`.
 - [x] Active-workflow rule dominates routing
 - [x] Clarification on low confidence / ambiguity
 - [x] Unauthorized domains removed from the candidate set
-- [~] Tool registration confirmed against the pinned image — **blocked on the R3 spike**
+- [x] Tool registration confirmed: MCP over Streamable HTTP; `openclaw mcp probe justina` reports 8 tools
 - [ ] Routing regression tests executed
 
 ---

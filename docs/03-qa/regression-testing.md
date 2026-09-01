@@ -255,7 +255,7 @@ Expected: `syntax is ok` / `test is successful`.
 If a new environment variable was added to `docker-compose.yml`, it must also appear in `.env.example`
 with no real value. Check both.
 
-### `docker/openclaw/agents/*.md` — agent prompts
+### `docker/openclaw/workspace/AGENTS.md` — agent prompts
 
 Prompt changes are not covered by any automated test. The only regression net is manual.
 

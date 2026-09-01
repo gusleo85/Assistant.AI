@@ -44,7 +44,7 @@ test/test-report.md             QA results
 2. `src/Justina.Expense.Application/Commands/` — the use cases, one file per concern.
 3. `src/Justina.Core.Application/Messaging/` — the CQRS contracts and the decorator pipeline.
 4. `src/Justina.Api/Tools/ToolEndpoints.cs` — the surface the AI actually calls.
-5. `docker/openclaw/agents/` — how the AI is instructed to use it.
+5. `docker/openclaw/workspace/` — how the AI is instructed to use it.
 
 ## Notable files
 

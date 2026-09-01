@@ -1,0 +1,104 @@
+{
+  // Justina's OpenClaw gateway configuration. JSON5: comments and trailing commas are legal.
+  //
+  // Seeded into the gateway's state volume on first start (see justina-openclaw-init in
+  // docker-compose.yml). It is NOT mounted read-only, because the gateway rewrites this file
+  // atomically and the docs warn that symlinked or read-only config layouts break those writes.
+  //
+  // ${VAR} substitution is uppercase-only and is filled from the container environment, so no secret
+  // is ever written into this file.
+  //
+  // Validation is strict: an unknown key makes the gateway refuse to start. Do not invent keys.
+
+  gateway: {
+    // The gateway refuses to start unless this is "local"; "remote" means "be a client of another
+    // gateway", which is not what we are running here.
+    mode: "local",
+    port: 18789,
+
+    // The default "loopback" bind listens on 127.0.0.1 *inside* the container, which is unreachable
+    // from other services on the Docker network. "lan" binds all interfaces.
+    bind: "lan",
+
+    // A non-loopback bind makes gateway auth mandatory.
+    auth: {
+      mode: "token",
+      token: "${OPENCLAW_GATEWAY_TOKEN}",
+    },
+
+    // Would otherwise expose an admin host shell inside the container on demand.
+    terminal: { enabled: false },
+  },
+
+  models: {
+    mode: "merge",
+    providers: {
+      openai: {
+        apiKey: "${OPENAI_API_KEY}",
+      },
+    },
+  },
+
+  // The only supported route from an OpenClaw agent to an external tool is an MCP server — there is no
+  // configuration for calling a plain HTTP JSON API. justina-app serves MCP at /mcp for exactly this.
+  mcp: {
+    servers: {
+      justina: {
+        url: "http://justina-app:8080/mcp",
+        transport: "streamable-http",
+        headers: {
+          "X-Justina-Tool-Key": "${JUSTINA_TOOL_SECRET}",
+        },
+        requestTimeoutMs: 120000,
+        connectionTimeoutMs: 10000,
+      },
+    },
+  },
+
+  // "coding" implicitly allows bundle-mcp, which is what makes the Justina tools available.
+  tools: {
+    profile: "coding",
+  },
+
+  agents: {
+    defaults: {
+      // Persona and behaviour come from the bootstrap files in this workspace (AGENTS.md), because
+      // OpenClaw has no per-agent systemPrompt key.
+      workspace: "/config/workspace",
+      contextInjection: "always",
+      model: {
+        primary: "openai/gpt-5.4",
+        fallbacks: [],
+      },
+    },
+    entries: {
+      justina: {
+        name: "Justina",
+        identity: { name: "Justina" },
+      },
+    },
+  },
+
+  channels: {
+    telegram: {
+      enabled: true,
+      botToken: "${TELEGRAM_BOT_TOKEN}",
+
+      // Long polling is the default transport, so no public URL and no tunnel are required for
+      // Telegram. Only outbound HTTPS to api.telegram.org is needed.
+      //
+      // "pairing" means an unknown sender gets a one-time code that an approver must accept, rather
+      // than being served straight away. It is the safe default while the allowlist is empty — an
+      // "allowlist" policy with no entries is rejected by config validation anyway.
+      dmPolicy: "pairing",
+
+      // Groups stay closed until a chat is listed explicitly.
+      groupPolicy: "allowlist",
+    },
+  },
+
+  logging: {
+    level: "info",
+    consoleStyle: "json",
+  },
+}

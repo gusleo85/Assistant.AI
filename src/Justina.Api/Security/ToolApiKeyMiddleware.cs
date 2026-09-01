@@ -23,7 +23,12 @@ public sealed class ToolApiKeyMiddleware(RequestDelegate next, ToolApiOptions op
 
     public async Task InvokeAsync(HttpContext context)
     {
-        if (!context.Request.Path.StartsWithSegments("/tools", StringComparison.OrdinalIgnoreCase))
+        // Both transports into the tool surface are guarded: /tools (REST) and /mcp (what OpenClaw uses).
+        var isToolSurface =
+            context.Request.Path.StartsWithSegments("/tools", StringComparison.OrdinalIgnoreCase)
+            || context.Request.Path.StartsWithSegments("/mcp", StringComparison.OrdinalIgnoreCase);
+
+        if (!isToolSurface)
         {
             await next(context).ConfigureAwait(false);
             return;

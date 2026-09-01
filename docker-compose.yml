@@ -64,6 +64,34 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  justina-openclaw-init:
+    # Seeds the gateway's state volume on first start.
+    #
+    # The config cannot simply be bind-mounted: the gateway rewrites openclaw.json atomically (rename
+    # onto the path), so a read-only mount or a symlink breaks its own writes. Copying into the volume
+    # instead leaves the gateway owning the file.
+    #
+    # Existing files are never overwritten, so a change made through the gateway survives a restart.
+    # To reapply the checked-in config, remove the volume: docker compose down -v
+    image: busybox:1.37
+    container_name: justina-openclaw-init
+    command:
+      - sh
+      - -c
+      - |
+        mkdir -p /config/workspace
+        [ -f /config/openclaw.json ] || cp /seed/openclaw.json /config/openclaw.json
+        [ -f /config/workspace/AGENTS.md ] || cp /seed/workspace/AGENTS.md /config/workspace/AGENTS.md
+        # The gateway runs as uid 1000 (node) and writes state, backups and SQLite here. Without this
+        # the volume stays root-owned and the gateway dies on "EACCES: mkdir '/config/state'".
+        chown -R 1000:1000 /config
+        echo "openclaw config seeded:"; ls -la /config /config/workspace
+    volumes:
+      - openclaw-config:/config
+      - ./docker/openclaw:/seed:ro
+    networks: [justina-network]
+    restart: "no"
+
   justina-openclaw:
     # The AI/agent layer: conversation, intent routing, agent orchestration, tool selection.
     image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}
@@ -71,9 +99,16 @@ services:
     depends_on:
       justina-app:
         condition: service_healthy
+      justina-openclaw-init:
+        condition: service_completed_successfully
     environment:
-      OPENCLAW_CONFIG_DIR: /config
-      JUSTINA_TOOL_BASE_URL: http://justina-app:8080
+      # OPENCLAW_CONFIG_PATH points at the file itself; OPENCLAW_STATE_DIR is the writable directory the
+      # gateway keeps config backups, sessions and its SQLite databases in.
+      OPENCLAW_CONFIG_PATH: /config/openclaw.json
+      OPENCLAW_STATE_DIR: /config
+      # A non-loopback bind makes gateway auth mandatory; this is the token the config references.
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:?set OPENCLAW_GATEWAY_TOKEN in .env}
+      # Referenced by mcp.servers.justina.headers so the gateway can reach the tool surface.
       JUSTINA_TOOL_SECRET: ${JUSTINA_TOOL_SECRET}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
@@ -83,7 +118,6 @@ services:
       WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-}
     volumes:
       - openclaw-config:/config
-      - ./docker/openclaw:/seed:ro
     networks: [justina-network]
     restart: unless-stopped
 

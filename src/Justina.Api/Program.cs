@@ -1,6 +1,7 @@
 using Justina.Api.Hosting;
 using Justina.Api.Security;
 using Justina.Api.Tools;
+using ModelContextProtocol.Server;
 using Justina.Core.Infrastructure;
 using Justina.Core.Infrastructure.Persistence;
 using Justina.Core.Infrastructure.Security;
@@ -41,6 +42,14 @@ builder.Services.AddRecruitmentApplication();
 builder.Services.AddRecruitmentInfrastructure(builder.Configuration);
 
 builder.Services.AddScoped<RequestContextFactory>();
+
+// OpenClaw reaches Justina over MCP — it has no configuration for calling a plain HTTP JSON API.
+// The REST endpoints under /tools stay for testing and non-MCP clients; both funnel into the same
+// commands and queries, so authorization and state cannot diverge between them.
+builder.Services
+    .AddMcpServer()
+    .WithHttpTransport()
+    .WithToolsFromAssembly();
 builder.Services.AddHostedService<MediaCleanupService>();
 
 builder.Services.AddHealthChecks()
@@ -79,6 +88,7 @@ app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => fa
 // Readiness is the one that covers dependencies (§25).
 app.MapHealthChecks("/health/ready");
 app.MapToolEndpoints();
+app.MapMcp("/mcp");
 
 await MigrateDatabaseAsync(app).ConfigureAwait(false);
 

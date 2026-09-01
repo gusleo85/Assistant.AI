@@ -69,7 +69,7 @@ failure and logs an error — it does not throw.
 
 ## Working on the agents
 
-Agent prompts in `docker/openclaw/agents/` are mounted read-only. Editing one and restarting
+Agent prompts in `docker/openclaw/workspace/` are mounted read-only. Editing one and restarting
 `justina-openclaw` is enough:
 
 ```bash

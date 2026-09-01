@@ -117,8 +117,8 @@ re-display and re-ask.
 6. Register handlers in a `Add<Domain>Application()` extension and bind implementations in
    `Add<Domain>Infrastructure()`.
 7. Call both from `Program.cs`.
-8. Add tool endpoints in `ToolEndpoints`, declare them in `docker/openclaw/tools/justina-tools.json`, and
-   write an agent prompt in `docker/openclaw/agents/`.
+8. Add tool endpoints in `ToolEndpoints`, declare them in `src/Justina.Api/Tools/JustinaMcpTools.cs`, and
+   write an agent prompt in `docker/openclaw/workspace/`.
 9. Teach the Intent Router the new domain.
 10. Add an architecture test asserting the new domain does not reference the existing ones.
 

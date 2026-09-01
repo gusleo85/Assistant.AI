@@ -307,7 +307,7 @@ or trace attribute; see [security-testing.md](security-testing.md).
 - **A live Telegram round trip** needs a real bot token and a working tunnel. Nothing in the automated
   suite covers it.
 - **The OpenClaw side** — whether the pinned image registers Justina's tools the way
-  `docker/openclaw/openclaw.json.template` assumes — is unverified (plan risk R3). If the bot goes
+  `docker/openclaw/openclaw.json` assumes — is unverified (plan risk R3). If the bot goes
   quiet with no error in `justina-app`, suspect this first and check the OpenClaw container logs.
 - **Telegram's `update_id` deduplication** is OpenClaw's responsibility. Justina deduplicates on
   `messageId`, which is what T7 tests. If OpenClaw passes a fresh `messageId` for a retried update,

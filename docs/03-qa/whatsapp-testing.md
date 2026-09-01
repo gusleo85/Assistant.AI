@@ -84,7 +84,7 @@ webhook verification code anywhere in `src/`.
 
 That is not automatically a defect. Under the hybrid channel design, OpenClaw owns the transport, and
 both values are passed to `justina-openclaw` in `docker-compose.yml` and named in
-`docker/openclaw/openclaw.json.template`. Verification is *expected* to happen in the gateway's
+`docker/openclaw/openclaw.json`. Verification is *expected* to happen in the gateway's
 WhatsApp plugin.
 
 But whether the pinned OpenClaw image actually enforces it is **unverified** (plan risk R3). Nobody

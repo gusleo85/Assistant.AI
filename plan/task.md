@@ -673,7 +673,7 @@ Nothing is modified — the repository is empty. Everything below is new.
 `Justina.sln`, `docker-compose.yml`, `docker-compose.override.yml`, `.env.example`
 
 **Docker:** `docker/nginx/nginx.conf`, `docker/nginx/conf.d/justina.conf`,
-`docker/openclaw/openclaw.json.template`, `docker/openclaw/Dockerfile` (only if a custom image is needed),
+`docker/openclaw/openclaw.json`, `docker/openclaw/Dockerfile` (only if a custom image is needed),
 `src/Justina.Api/Dockerfile`
 
 **C# source:** the eleven projects listed in §6 —
