@@ -97,8 +97,13 @@ services:
     # onto the path), so a read-only mount or a symlink breaks its own writes. Copying into the volume
     # instead leaves the gateway owning the file.
     #
-    # Existing files are never overwritten, so a change made through the gateway survives a restart.
-    # To reapply the checked-in config, remove the volume: docker compose down -v
+    # openclaw.json is never overwritten, so a change made through the gateway — a paired channel, an
+    # approved user — survives a restart. To reapply the checked-in config: docker compose down -v
+    #
+    # AGENTS.md is the opposite: it is the agent's prompt, it is only ever authored here, and the gateway
+    # does not write it. It is copied on every boot. Seeding it once cost a morning — every prompt change
+    # was edited, committed and "deployed" while the agent kept running the copy made at first boot, and
+    # nothing in the logs said so. Source of truth wins on each start.
     image: busybox:1.37
     container_name: justina-openclaw-init
     command:
@@ -107,7 +112,7 @@ services:
       - |
         mkdir -p /config/workspace
         [ -f /config/openclaw.json ] || cp /seed/openclaw.json /config/openclaw.json
-        [ -f /config/workspace/AGENTS.md ] || cp /seed/workspace/AGENTS.md /config/workspace/AGENTS.md
+        cp /seed/workspace/AGENTS.md /config/workspace/AGENTS.md
         # The gateway runs as uid 1000 (node) and writes state, backups and SQLite here. Without this
         # the volume stays root-owned and the gateway dies on "EACCES: mkdir '/config/state'".
         chown -R 1000:1000 /config
