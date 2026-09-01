@@ -110,8 +110,8 @@ services:
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:?set OPENCLAW_GATEWAY_TOKEN in .env}
       # Referenced by mcp.servers.justina.headers so the gateway can reach the tool surface.
       JUSTINA_TOOL_SECRET: ${JUSTINA_TOOL_SECRET}
-      # Claude is the gateway's LLM. justina-app still uses OpenAI separately for document Vision.
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # One OpenAI key serves both the gateway's reasoning model and justina-app's document Vision.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
       WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}

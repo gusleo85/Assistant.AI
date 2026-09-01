@@ -30,19 +30,18 @@
     terminal: { enabled: false },
   },
 
-  // Claude is the LLM. Two auth routes exist for Anthropic; this is the API-key one, which the provider
-  // docs recommend for shared automation because it bills pay-as-you-go rather than drawing on a personal
-  // subscription's limits.
+  // OpenAI is the LLM, sharing the single OPENAI_API_KEY that justina-app already uses for document
+  // Vision. One credential, one bill, one thing to rotate.
   //
-  // The alternative is a Claude subscription setup-token: run `claude setup-token` on a machine with
-  // Claude Code installed, then inside the container
-  //   openclaw models auth login --provider anthropic --method setup-token
-  // which stores it in the gateway's auth profile instead of here.
+  // To run the agent on Claude instead, add an anthropic provider block with
+  //   anthropic: { apiKey: "${ANTHROPIC_API_KEY}" }
+  // pass ANTHROPIC_API_KEY into this container, and set the model ref below to anthropic/claude-opus-5.
+  // The two are independent: the gateway's reasoning model and the Vision provider need not match.
   models: {
     mode: "merge",
     providers: {
-      anthropic: {
-        apiKey: "${ANTHROPIC_API_KEY}",
+      openai: {
+        apiKey: "${OPENAI_API_KEY}",
       },
     },
   },
@@ -75,7 +74,7 @@
       workspace: "/config/workspace",
       contextInjection: "always",
       model: {
-        primary: "anthropic/claude-opus-5",
+        primary: "openai/gpt-5.4",
         fallbacks: [],
       },
     },
