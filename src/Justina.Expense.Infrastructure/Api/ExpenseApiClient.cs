@@ -56,7 +56,20 @@ public sealed class ExpenseApiOptions
 
     public ExpenseApiMode? SubmissionMode { get; set; }
 
+    /// <summary>
+    /// Where the API credential comes from. Live mints a company token per company through JustLogin
+    /// identity; anything else sends <see cref="ApiKey"/> as it stands.
+    ///
+    /// It is its own seam rather than following <see cref="Mode"/>, because the two are genuinely
+    /// independent: the mock endpoints want the static key even while the catalogue is live, and a live
+    /// submission against a real company needs a real token even while everything else is stubbed.
+    /// </summary>
+    public ExpenseApiMode? IdentityMode { get; set; }
+
     public ExpenseApiMode ResolvedCatalogueMode => CatalogueMode ?? Mode;
+
+    /// <summary>Defaults to the static key, so no existing configuration changes behaviour.</summary>
+    public ExpenseApiMode ResolvedIdentityMode => IdentityMode ?? ExpenseApiMode.Stub;
 
     public ExpenseApiMode ResolvedTenantMode => TenantMode ?? Mode;
 
@@ -136,6 +149,7 @@ public sealed class ExpenseApiOptions
 public sealed class ExpenseApiClient(
     HttpClient httpClient,
     IOptions<ExpenseApiOptions> options,
+    IExpenseAccessTokenProvider tokens,
     ILogger<ExpenseApiClient> logger)
     : IExpenseApiClient
 {
@@ -160,6 +174,21 @@ public sealed class ExpenseApiClient(
         {
             Content = JsonContent.Create(BuildPayload(submission)),
         };
+
+        // Company-scoped credential, when we know which company. Without a tenant the request falls back
+        // to the configured static key: this client predates tenant resolution and its contract is still
+        // provisional (R1), so a missing tenant must not turn into a hard failure here.
+        if (submission.Tenant is { } tenant)
+        {
+            var token = await tokens.GetAsync(tenant, cancellationToken).ConfigureAwait(false);
+
+            if (token.IsFailure)
+            {
+                return Result.Failure<ExpenseSubmissionResult>(token.Error);
+            }
+
+            ExpenseApiAuthorization.Apply(request, _options, token.Value);
+        }
 
         // The idempotency key travels with the request so a retry at any layer — ours, the network's, or
         // the API's own — resolves to the same expense (§33).

@@ -3,6 +3,9 @@
   <ItemGroup>
     <ProjectReference Include="..\Justina.Expense.Application\Justina.Expense.Application.csproj" />
     <ProjectReference Include="..\Justina.Core.Infrastructure\Justina.Core.Infrastructure.csproj" />
+    <!-- Vendored JustLogin identity client. Referenced here and nowhere else: an architecture test
+         holds that line, so no SDK type can reach a handler. -->
+    <ProjectReference Include="..\JustLogin.Identity.SDK\JustLogin.Identity.SDK.csproj" />
   </ItemGroup>
 
   <ItemGroup>

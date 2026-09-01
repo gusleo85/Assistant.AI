@@ -2,6 +2,8 @@ using Justina.Core.Infrastructure.Persistence;
 using Justina.Expense.Application.Abstractions;
 using Justina.Expense.Infrastructure.Api;
 using Justina.Expense.Infrastructure.Persistence;
+using Justlogin.Configurations.HttpClient.Startup.Extensions;
+using JustLogin.Identity.SDK.Startup;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,6 +43,7 @@ public static class ExpenseInfrastructureServiceCollectionExtensions
 
         Validate(options, configuration);
 
+        AddAccessTokens(services, options, configuration);
         AddCatalogue(services, options);
         AddTenantResolver(services, options);
         AddSubmissionClient(services, options);
@@ -101,6 +104,23 @@ public static class ExpenseInfrastructureServiceCollectionExtensions
                 "(for example https://apis.justlogindevelopment.xyz).");
         }
 
+        if (options.ResolvedIdentityMode == ExpenseApiMode.Live)
+        {
+            var missing = new[] { "JLHttpClient:BaseUrl", "IdentitySDK:ClientID", "IdentitySDK:ClientSecret", "IdentitySDK:Scope" }
+                .Where(key => string.IsNullOrWhiteSpace(configuration[key]))
+                .ToList();
+
+            if (missing.Count > 0)
+            {
+                // Caught here rather than inside the SDK, whose own check throws ArgumentNullException
+                // naming a property nobody configured by that name.
+                throw new InvalidOperationException(
+                    $"{ExpenseApiOptions.SectionName}:IdentityMode is Live but {string.Join(", ", missing)} " +
+                    "are not configured. The identity server issues the company token every Expense API " +
+                    "call carries; without these no call can be authenticated.");
+            }
+        }
+
         if (options.ResolvedTenantMode == ExpenseApiMode.Live
             && (options.OrganizationId is null || options.MemberId is null))
         {
@@ -109,6 +129,36 @@ public static class ExpenseInfrastructureServiceCollectionExtensions
                 "required when TenantMode is Live. Member lookup by phone or email does not exist in " +
                 "expense-api, so a live deployment serves one configured company until it does.");
         }
+    }
+
+    /// <summary>
+    /// Chooses where the Expense API credential comes from.
+    ///
+    /// <c>ExpenseApi:IdentityMode=Live</c> mints a company-scoped token per company through JustLogin's
+    /// identity server. Anything else uses <c>ExpenseApi:ApiKey</c> verbatim, which is what the mock
+    /// endpoints check and what every existing local setup already has.
+    ///
+    /// The identity client is registered as a singleton by the SDK and caches a system token in memory,
+    /// so this must not be resolved per request.
+    /// </summary>
+    private static void AddAccessTokens(
+        IServiceCollection services,
+        ExpenseApiOptions options,
+        IConfiguration configuration)
+    {
+        if (options.ResolvedIdentityMode != ExpenseApiMode.Live)
+        {
+            services.AddSingleton<IExpenseAccessTokenProvider, ConfiguredExpenseAccessTokenProvider>();
+            return;
+        }
+
+        // The SDK builds its requests against a named HttpClient it resolves itself, and reads its own
+        // configuration section. Both registrations are the vendor's; calling them the way the Lambdas
+        // do is what keeps this integration recognisable to whoever maintains the other three.
+        services.AddJLHttpClient(configuration);
+        services.AddIdentitySdk(configuration);
+
+        services.AddSingleton<IExpenseAccessTokenProvider, JustLoginAccessTokenProvider>();
     }
 
     private static void AddCatalogue(IServiceCollection services, ExpenseApiOptions options)

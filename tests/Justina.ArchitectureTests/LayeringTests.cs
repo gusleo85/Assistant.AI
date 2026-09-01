@@ -103,6 +103,27 @@ public class LayeringTests
         }
     }
 
+    /// <summary>
+    /// The vendored JustLogin Identity SDK is infrastructure, and third-party at that. It may be used by
+    /// exactly one project: <c>Justina.Expense.Infrastructure</c>, behind
+    /// <c>IExpenseAccessTokenProvider</c>.
+    ///
+    /// Worth its own test because the pressure to break it is real and always local — a handler needing
+    /// a company id, a tool wanting a token. Each is one line, and each would put a vendor type we do
+    /// not control into code we cannot change without them.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(DomainAndApplicationAssemblies))]
+    public void Only_expense_infrastructure_touches_the_identity_sdk(string name, Assembly assembly)
+    {
+        var result = Types.InAssembly(assembly)
+            .ShouldNot()
+            .HaveDependencyOnAny("JustLogin.Identity.SDK", "JustLogin.SDK.Core", "Justlogin.Configurations")
+            .GetResult();
+
+        result.IsSuccessful.ShouldBeTrue(Explain(name, result));
+    }
+
     private static string Explain(string assemblyName, TestResult result)
     {
         var offenders = result.FailingTypeNames is null ? [] : result.FailingTypeNames.ToList();

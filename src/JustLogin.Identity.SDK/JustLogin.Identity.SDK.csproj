@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    VENDORED — this is JustLogin's Identity SDK, copied from
+    ReimbursementEventIntegrationLambda/src/JustLogin.Identity.SDK. It is not ours to redesign: keeping
+    the source close to upstream is what lets a future `diff` against that copy stay readable.
+
+    Three deliberate divergences, each recorded here so nobody restores them by accident:
+
+      1. Startup/Helpers/ParameterStoreHelper.cs is not copied, and the AWS
+         Amazon.Extensions.Configuration.SystemsManager package reference is dropped with it. It reads
+         /identityserver out of AWS Systems Manager, which is how the Lambdas are configured. Justina
+         runs in Docker and configures itself from environment variables, so the file has nothing to do
+         and the dependency would be carried for nothing.
+
+      2. The request log line in SingletonAuthenticationClient is removed — see the comment there.
+
+      3. The repository's strict build settings are relaxed below, rather than editing vendor source
+         to satisfy them. Warnings we would have to silence one by one in code we do not own become a
+         permanent merge conflict with upstream; a scoped relaxation does not.
+  -->
+
+  <ItemGroup>
+    <PackageReference Include="JustLogin.SDK.Core" Version="1.0.2" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.1.0" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <!-- Upstream's framework. Justina targets net10.0 and references this happily; retargeting would
+         be a fourth divergence for no gain. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>JustLogin.Identity.SDK</AssemblyName>
+    <RootNamespace>JustLogin.Identity.SDK</RootNamespace>
+    <Company>JustLogin Pte Ltd</Company>
+
+    <!-- Vendor code, held to vendor standards. Justina's own projects keep warnings-as-errors. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS8618;CS8601;CS8602;CS8603;CS8604;CS0219;CS1998;CS8625;CS8629</NoWarn>
+  </PropertyGroup>
+
+</Project>

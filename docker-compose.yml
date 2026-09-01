@@ -62,6 +62,13 @@ services:
       ExpenseApi__ApiKey: ${EXPENSE_API_KEY:-}
       ExpenseApi__ConfiguredOrganizationId: ${EXPENSE_ORGANIZATION_ID:-}
       ExpenseApi__ConfiguredMemberId: ${EXPENSE_MEMBER_ID:-}
+      # Live swaps the fixed ApiKey for company tokens from JustLogin identity, cached per company.
+      # The three IdentitySDK values below are secrets and come from .env, never from this file.
+      ExpenseApi__IdentityMode: ${EXPENSE_API_IDENTITY_MODE:-}
+      JLHttpClient__BaseUrl: ${JL_HTTP_CLIENT_URL:-}
+      IdentitySDK__ClientID: ${IDENTITY_CLIENT_ID:-}
+      IdentitySDK__ClientSecret: ${IDENTITY_CLIENT_SECRET:-}
+      IdentitySDK__Scope: ${IDENTITY_SCOPE:-openid offline_access}
       RecruitmentApi__BaseUrl: ${RECRUITMENT_API_URL:-}
       RecruitmentApi__ApiKey: ${RECRUITMENT_API_KEY:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}

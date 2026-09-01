@@ -11,6 +11,10 @@
     <Project Path="src/Justina.Recruitment.Domain/Justina.Recruitment.Domain.csproj" />
     <Project Path="src/Justina.Recruitment.Infrastructure/Justina.Recruitment.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/vendor/">
+    <!-- Not ours. Kept close to upstream on purpose; see its csproj for the divergences. -->
+    <Project Path="src/JustLogin.Identity.SDK/JustLogin.Identity.SDK.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Justina.ArchitectureTests/Justina.ArchitectureTests.csproj" />
     <Project Path="tests/Justina.Core.UnitTests/Justina.Core.UnitTests.csproj" />

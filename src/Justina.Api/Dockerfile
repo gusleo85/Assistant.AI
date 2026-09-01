@@ -5,6 +5,9 @@ WORKDIR /src
 
 # Restore first, against project files only, so a source-only change does not invalidate the package layer.
 COPY Directory.Build.props ./
+# The vendored Identity SDK builds against JustLogin's private feed, and the container has no access to
+# the host's NuGet cache — without this file the restore below cannot resolve JustLogin.SDK.Core.
+COPY nuget.config ./
 COPY src/Justina.Core.Domain/*.csproj                src/Justina.Core.Domain/
 COPY src/Justina.Core.Application/*.csproj           src/Justina.Core.Application/
 COPY src/Justina.Core.Infrastructure/*.csproj        src/Justina.Core.Infrastructure/
@@ -15,6 +18,7 @@ COPY src/Justina.Recruitment.Domain/*.csproj         src/Justina.Recruitment.Dom
 COPY src/Justina.Recruitment.Application/*.csproj    src/Justina.Recruitment.Application/
 COPY src/Justina.Recruitment.Infrastructure/*.csproj src/Justina.Recruitment.Infrastructure/
 COPY src/Justina.Api/*.csproj                        src/Justina.Api/
+COPY src/JustLogin.Identity.SDK/*.csproj             src/JustLogin.Identity.SDK/
 RUN dotnet restore src/Justina.Api/Justina.Api.csproj
 
 COPY src/ src/

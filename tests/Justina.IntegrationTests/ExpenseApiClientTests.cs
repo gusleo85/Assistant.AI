@@ -58,7 +58,11 @@ public sealed class ExpenseApiClientTests : IDisposable
             options.ApiKeyHeader,
             $"{options.ApiKeyPrefix}{options.ApiKey}");
 
-        return new ExpenseApiClient(httpClient, Options.Create(options), NullLogger<ExpenseApiClient>.Instance);
+        return new ExpenseApiClient(
+            httpClient,
+            Options.Create(options),
+            new FakeAccessTokenProvider(),
+            NullLogger<ExpenseApiClient>.Instance);
     }
 
     [Fact]
@@ -203,6 +207,7 @@ public sealed class ExpenseApiClientTests : IDisposable
         var unconfigured = new ExpenseApiClient(
             new HttpClient(),
             Options.Create(new ExpenseApiOptions { BaseUrl = string.Empty }),
+            new FakeAccessTokenProvider(),
             NullLogger<ExpenseApiClient>.Instance);
 
         client.ShouldNotBeNull();

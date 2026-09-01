@@ -25,6 +25,7 @@ namespace Justina.Expense.Infrastructure.Api;
 public sealed class ChatScanExpenseApiClient(
     HttpClient httpClient,
     IOptions<ExpenseApiOptions> options,
+    IExpenseAccessTokenProvider tokens,
     ILogger<ChatScanExpenseApiClient> logger)
     : IExpenseApiClient
 {
@@ -46,11 +47,21 @@ public sealed class ChatScanExpenseApiClient(
                 "I could not work out which company this expense belongs to.");
         }
 
+        var token = await tokens.GetAsync(submission.Tenant, cancellationToken).ConfigureAwait(false);
+
+        if (token.IsFailure)
+        {
+            // The credential is the caller's problem to report, not something to retry blindly: a
+            // submission sent without one comes back as an opaque 401 that reads like the API is down.
+            return Result.Failure<ExpenseSubmissionResult>(token.Error);
+        }
+
         using var request = new HttpRequestMessage(HttpMethod.Post, _options.ChatScanPath)
         {
             Content = JsonContent.Create(BuildPayload(submission)),
         };
 
+        ExpenseApiAuthorization.Apply(request, _options, token.Value);
         request.Headers.TryAddWithoutValidation(_options.IdempotencyHeader, submission.IdempotencyKey);
         request.Headers.TryAddWithoutValidation(_options.CorrelationHeader, submission.CorrelationId.Value);
 

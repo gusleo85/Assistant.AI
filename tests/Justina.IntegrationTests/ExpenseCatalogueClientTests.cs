@@ -57,7 +57,11 @@ public sealed class ExpenseCatalogueClientTests : IDisposable
             Timeout = TimeSpan.FromSeconds(timeoutSeconds),
         };
 
-        return new ExpenseCatalogueClient(httpClient, options, NullLogger<ExpenseCatalogueClient>.Instance);
+        return new ExpenseCatalogueClient(
+            httpClient,
+            options,
+            new FakeAccessTokenProvider(),
+            NullLogger<ExpenseCatalogueClient>.Instance);
     }
 
     private void GivenCatalogue(string categories = CategoriesJson, string taxes = TaxesJson)

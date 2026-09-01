@@ -22,6 +22,7 @@ namespace Justina.Expense.Infrastructure.Api;
 public sealed class ExpenseCatalogueClient(
     HttpClient httpClient,
     IOptions<ExpenseApiOptions> options,
+    IExpenseAccessTokenProvider tokens,
     ILogger<ExpenseCatalogueClient> logger)
     : IExpenseCatalogue
 {
@@ -77,9 +78,26 @@ public sealed class ExpenseCatalogueClient(
     {
         var path = string.Format(CultureInfo.InvariantCulture, pathTemplate, tenant.OrganizationId);
 
+        var token = await tokens.GetAsync(tenant, cancellationToken).ConfigureAwait(false);
+
+        if (token.IsFailure)
+        {
+            // Same policy as every other failure here: an empty list, never an error. A catalogue we
+            // could not authenticate for costs the user a constrained prompt, not their receipt.
+            logger.LogWarning(
+                "No credential for {Path}; continuing without that list ({Reason})",
+                pathTemplate,
+                token.Error.Code);
+
+            return [];
+        }
+
         try
         {
-            using var response = await httpClient.GetAsync(path, cancellationToken).ConfigureAwait(false);
+            using var request = new HttpRequestMessage(HttpMethod.Get, path);
+            ExpenseApiAuthorization.Apply(request, _options, token.Value);
+
+            using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {

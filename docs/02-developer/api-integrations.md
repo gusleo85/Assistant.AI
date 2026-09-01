@@ -47,6 +47,40 @@ When the specification arrives, change `BuildPayload` and `ReadExpenseId` in
 With no `BaseUrl` configured the client logs an error and returns `not_available`, so an unconfigured
 deployment says so instead of failing obscurely.
 
+### Authentication — JustLogin identity
+
+The real Expense API does not accept a fixed key. Every call carries a token minted for the company the
+expense belongs to, and those expire, so the credential has to be fetched and refreshed while the process
+runs. That is what `JustLogin.Identity.SDK` is for — vendored into `src/JustLogin.Identity.SDK`, copied
+from `ReimbursementEventIntegrationLambda`.
+
+```
+ExpenseApi__IdentityMode=Stub   (default)  ExpenseApi:ApiKey is sent verbatim — what the mocks check
+ExpenseApi__IdentityMode=Live              a company token per company, from the identity server
+```
+
+Its own seam, not a follower of `Mode`: the mock endpoints want the static key even while the catalogue
+is live, and a live submission needs a real token even while everything else is stubbed.
+
+Live additionally needs `JLHttpClient:BaseUrl` (the JustLogin API estate — identity, membership and
+expense all sit behind it) and `IdentitySDK:ClientID` / `ClientSecret` / `Scope`. Startup refuses if any
+is missing, rather than letting the SDK throw an `ArgumentNullException` naming a property nobody
+configured under that name.
+
+Everything SDK-shaped stops at `IExpenseAccessTokenProvider`. `JustLoginAccessTokenProvider` is the only
+class that touches it; it caches tokens per company with a five-minute refresh margin (the SDK's own
+per-company caching is commented out upstream, so without this every catalogue fetch and submission would
+cost two extra round trips), and it turns the SDK's exceptions into results. An architecture test holds
+the line that no other assembly references the SDK.
+
+The token goes on the request, never on the `HttpClient`: one client serves every company, and a default
+header would leave one company's credential where another company's request could pick it up.
+
+Three deliberate divergences from the upstream copy, all recorded in the vendored csproj: the AWS
+Parameter Store helper is dropped (Justina configures itself from environment variables), the strict
+build settings are relaxed for vendor code, and the request log line that wrote `client_secret` to every
+sink is removed.
+
 ### Resilience
 
 `AddStandardResilienceHandler()` supplies retry with exponential backoff and jitter, a circuit breaker and
