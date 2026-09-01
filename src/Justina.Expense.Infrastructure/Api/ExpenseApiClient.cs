@@ -38,13 +38,6 @@ public sealed class ExpenseApiOptions
     /// </summary>
     public ExpenseApiMode Mode { get; set; } = ExpenseApiMode.Stub;
 
-    /// <summary>The organization every conversation resolves to under <see cref="ExpenseApiMode.Stub"/>.</summary>
-    public Guid StubOrganizationId { get; set; } = Guid.Parse("33333333-0000-4000-8000-000000000001");
-
-    public string StubCompanyId { get; set; } = "STUB-COMPANY";
-
-    public Guid StubMemberId { get; set; } = Guid.Parse("44444444-0000-4000-8000-000000000001");
-
     public string BaseUrl { get; set; } = string.Empty;
 
     /// <summary>From configuration only; never logged and never sent to the agent layer (§38).</summary>

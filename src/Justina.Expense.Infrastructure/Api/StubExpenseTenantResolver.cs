@@ -2,39 +2,63 @@ using Justina.Core.Application.Messaging;
 using Justina.Core.Domain.Results;
 using Justina.Expense.Application.Abstractions;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Justina.Expense.Infrastructure.Api;
 
 /// <summary>
-/// Resolves every conversation to one configured company while
+/// Resolves a channel identity to a JustLogin member from the embedded mock data, while
 /// <see cref="ExpenseApiOptions.Mode"/> is <c>Stub</c>.
 ///
-/// The live resolver will look a member up by WhatsApp phone number, and for Telegram by a stored link
-/// between the numeric Telegram user id and a JustLogin member — a Telegram update carries no phone
-/// number. Neither contract exists yet, so this stands in for both.
+/// It mirrors the shape the live resolver will need rather than short-circuiting it: a channel identity
+/// is looked up in a link table, and the member it finds carries the organization. Live, WhatsApp will
+/// resolve by phone number and Telegram by exactly this kind of stored link — a Telegram update has no
+/// phone number, and nothing in expense-api maps a phone or an email to a member.
 /// </summary>
-public sealed class StubExpenseTenantResolver(
-    IOptions<ExpenseApiOptions> options,
-    ILogger<StubExpenseTenantResolver> logger)
+public sealed class StubExpenseTenantResolver(ILogger<StubExpenseTenantResolver> logger)
     : IExpenseTenantResolver
 {
-    private readonly ExpenseApiOptions _options = options.Value;
-
     public Task<Result<ExpenseTenant>> ResolveAsync(RequestContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        logger.LogWarning(
-            "Expense tenant resolution is running in STUB mode: {Channel} user resolved to the configured " +
-            "organization {OrganizationId}, not to a real JustLogin member",
-            context.Channel,
-            _options.StubOrganizationId);
+        var directory = StubMemberDirectory.Current;
+        var member = directory.Find(context.Channel, context.User.UserId);
 
-        var tenant = new ExpenseTenant(
-            _options.StubOrganizationId,
-            _options.StubCompanyId,
-            _options.StubMemberId);
+        if (member is null)
+        {
+            member = directory.Default;
+
+            if (member is null)
+            {
+                return Task.FromResult(Result.Failure<ExpenseTenant>(
+                    ErrorCodes.NotAvailable,
+                    "This conversation is not linked to an expense account yet."));
+            }
+
+            logger.LogWarning(
+                "STUB tenant resolution: {Channel} user {UserId} is not linked to any member, falling " +
+                "back to {FullName} ({MemberId}). Live, this would be a refusal until the user pairs.",
+                context.Channel,
+                context.User.UserId,
+                member.FullName,
+                member.Id);
+        }
+        else
+        {
+            logger.LogWarning(
+                "STUB tenant resolution: {Channel} user {UserId} resolved to {FullName} ({MemberId}) in " +
+                "organization {OrganizationId} from embedded mock data, not from JustLogin",
+                context.Channel,
+                context.User.UserId,
+                member.FullName,
+                member.Id,
+                member.OrganizationId);
+        }
+
+        // CompanyId is the separate legacy identifier the membership API returns and the token request
+        // sends as its CompanyID form field. We have no mock value for it, so the 32-character company
+        // GUID stands in — nothing in Stub mode reads it.
+        var tenant = new ExpenseTenant(member.OrganizationId, member.CompanyGuid, member.Id);
 
         return Task.FromResult(Result.Success(tenant));
     }
