@@ -1,0 +1,32 @@
+# Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Secrets — never commit. `.env.example` is the template that IS committed.
+.env
+.env.*
+!.env.example
+*.pfx
+*.key
+appsettings.Development.json
+appsettings.Local.json
+
+# Test and coverage output
+TestResults/
+coverage*.json
+coverage*.xml
+*.trx
+
+# Local media and scratch
+media/
+*.log

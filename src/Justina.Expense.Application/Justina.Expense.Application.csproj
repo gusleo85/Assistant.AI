@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Justina.Expense.Domain\Justina.Expense.Domain.csproj" />
+    <ProjectReference Include="..\Justina.Core.Application\Justina.Core.Application.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Idempotency key derivation is internal, but it is the mechanism behind duplicate prevention,
+         so it is asserted directly rather than only observed through a handler. -->
+    <InternalsVisibleTo Include="Justina.Expense.UnitTests" />
+  </ItemGroup>
+
+</Project>

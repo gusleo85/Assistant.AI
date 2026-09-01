@@ -1,0 +1,191 @@
+using System.Globalization;
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Justina.Core.Domain.Results;
+using Justina.Expense.Application.Abstractions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace Justina.Expense.Infrastructure.Api;
+
+public sealed class ExpenseApiOptions
+{
+    public const string SectionName = "ExpenseApi";
+
+    public string BaseUrl { get; set; } = string.Empty;
+
+    /// <summary>From configuration only; never logged and never sent to the agent layer (§38).</summary>
+    public string ApiKey { get; set; } = string.Empty;
+
+    /// <summary>Header the API expects the key in. Configurable because the contract is not yet fixed.</summary>
+    public string ApiKeyHeader { get; set; } = "Authorization";
+
+    public string ApiKeyPrefix { get; set; } = "Bearer ";
+
+    public string SubmitPath { get; set; } = "expenses";
+
+    public string IdempotencyHeader { get; set; } = "Idempotency-Key";
+
+    public string CorrelationHeader { get; set; } = "X-Correlation-Id";
+
+    public int TimeoutSeconds { get; set; } = 30;
+}
+
+/// <summary>
+/// The only code that talks to the external Expense API (§31, §32).
+///
+/// PROVISIONAL CONTRACT — the real Expense API specification is not available yet (plan risk R1).
+/// The wire shape below is Justina's assumption; when the specification arrives, only the mapping in
+/// <see cref="BuildPayload"/> and <see cref="ReadExpenseId"/> changes. Everything above this class —
+/// validation, state machine, idempotency, authorization — is unaffected by that change.
+/// </summary>
+public sealed class ExpenseApiClient(
+    HttpClient httpClient,
+    IOptions<ExpenseApiOptions> options,
+    ILogger<ExpenseApiClient> logger)
+    : IExpenseApiClient
+{
+    private readonly ExpenseApiOptions _options = options.Value;
+
+    public async Task<Result<ExpenseSubmissionResult>> SubmitAsync(
+        ExpenseSubmission submission,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(submission);
+
+        if (string.IsNullOrWhiteSpace(_options.BaseUrl))
+        {
+            logger.LogError("The Expense API is not configured: no base URL supplied");
+
+            return Result.Failure<ExpenseSubmissionResult>(
+                ErrorCodes.NotAvailable,
+                "Expense submission is not available right now.");
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, _options.SubmitPath)
+        {
+            Content = JsonContent.Create(BuildPayload(submission)),
+        };
+
+        // The idempotency key travels with the request so a retry at any layer — ours, the network's, or
+        // the API's own — resolves to the same expense (§33).
+        request.Headers.TryAddWithoutValidation(_options.IdempotencyHeader, submission.IdempotencyKey);
+        request.Headers.TryAddWithoutValidation(_options.CorrelationHeader, submission.CorrelationId.Value);
+
+        try
+        {
+            using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return Failure(response.StatusCode, body);
+            }
+
+            var expenseId = ReadExpenseId(body);
+
+            if (string.IsNullOrWhiteSpace(expenseId))
+            {
+                logger.LogWarning("The Expense API accepted the submission but returned no expense id");
+
+                return Result.Failure<ExpenseSubmissionResult>(
+                    ErrorCodes.ExternalApiFailed,
+                    "The expense system accepted the receipt but did not return a reference.");
+            }
+
+            return Result.Success(new ExpenseSubmissionResult(expenseId));
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning("The Expense API timed out");
+
+            return Result.Failure<ExpenseSubmissionResult>(
+                ErrorCodes.ExternalApiFailed,
+                "The expense system did not respond in time. Your receipt is saved and can be retried.");
+        }
+        catch (HttpRequestException exception)
+        {
+            logger.LogWarning(exception, "The Expense API could not be reached");
+
+            return Result.Failure<ExpenseSubmissionResult>(
+                ErrorCodes.ExternalApiFailed,
+                "I could not reach the expense system. Your receipt is saved and can be retried.");
+        }
+    }
+
+    private Result<ExpenseSubmissionResult> Failure(HttpStatusCode statusCode, string body)
+    {
+        // Provider detail is logged (truncated) but never relayed to the user (§38).
+        logger.LogWarning(
+            "The Expense API rejected the submission with {StatusCode}: {Body}",
+            (int)statusCode,
+            body.Length > 500 ? body[..500] : body);
+
+        return statusCode switch
+        {
+            HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => Result.Failure<ExpenseSubmissionResult>(
+                ErrorCodes.Unauthorized,
+                "The expense system refused this submission for this user."),
+
+            HttpStatusCode.Conflict => Result.Failure<ExpenseSubmissionResult>(
+                ErrorCodes.Conflict,
+                "The expense system reports this expense already exists."),
+
+            HttpStatusCode.BadRequest or HttpStatusCode.UnprocessableEntity =>
+                Result.Failure<ExpenseSubmissionResult>(
+                    ErrorCodes.Validation,
+                    "The expense system rejected these details. Please check them and try again."),
+
+            _ => Result.Failure<ExpenseSubmissionResult>(
+                ErrorCodes.ExternalApiFailed,
+                "The expense system could not accept the receipt. It can be retried."),
+        };
+    }
+
+    private static JsonObject BuildPayload(ExpenseSubmission submission)
+    {
+        var lineItems = new JsonArray();
+
+        foreach (var item in submission.LineItems)
+        {
+            lineItems.Add(new JsonObject
+            {
+                ["description"] = item.Description,
+                ["quantity"] = item.Quantity,
+                ["unitPrice"] = item.UnitPrice,
+                ["amount"] = item.Amount,
+            });
+        }
+
+        return new JsonObject
+        {
+            ["merchant"] = submission.Merchant,
+            ["date"] = submission.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            ["currency"] = submission.Currency,
+            ["amount"] = submission.Amount,
+            ["category"] = submission.Category,
+            ["receiptNumber"] = submission.ReceiptNumber,
+            ["taxAmount"] = submission.TaxAmount,
+            ["submittedBy"] = submission.SubmittedByUserId,
+            ["lineItems"] = lineItems,
+        };
+    }
+
+    private static string? ReadExpenseId(string body)
+    {
+        try
+        {
+            var root = JsonNode.Parse(body)?.AsObject();
+
+            return root?["id"]?.GetValue<string>()
+                ?? root?["expenseId"]?.GetValue<string>()
+                ?? root?["data"]?["id"]?.GetValue<string>();
+        }
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException or FormatException)
+        {
+            return null;
+        }
+    }
+}

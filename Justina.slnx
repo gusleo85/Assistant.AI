@@ -1,0 +1,21 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Justina.Api/Justina.Api.csproj" />
+    <Project Path="src/Justina.Core.Application/Justina.Core.Application.csproj" />
+    <Project Path="src/Justina.Core.Domain/Justina.Core.Domain.csproj" />
+    <Project Path="src/Justina.Core.Infrastructure/Justina.Core.Infrastructure.csproj" />
+    <Project Path="src/Justina.Expense.Application/Justina.Expense.Application.csproj" />
+    <Project Path="src/Justina.Expense.Domain/Justina.Expense.Domain.csproj" />
+    <Project Path="src/Justina.Expense.Infrastructure/Justina.Expense.Infrastructure.csproj" />
+    <Project Path="src/Justina.Recruitment.Application/Justina.Recruitment.Application.csproj" />
+    <Project Path="src/Justina.Recruitment.Domain/Justina.Recruitment.Domain.csproj" />
+    <Project Path="src/Justina.Recruitment.Infrastructure/Justina.Recruitment.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Justina.ArchitectureTests/Justina.ArchitectureTests.csproj" />
+    <Project Path="tests/Justina.Core.UnitTests/Justina.Core.UnitTests.csproj" />
+    <Project Path="tests/Justina.Expense.UnitTests/Justina.Expense.UnitTests.csproj" />
+    <Project Path="tests/Justina.IntegrationTests/Justina.IntegrationTests.csproj" />
+    <Project Path="tests/Justina.Recruitment.UnitTests/Justina.Recruitment.UnitTests.csproj" />
+  </Folder>
+</Solution>

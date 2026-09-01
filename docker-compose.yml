@@ -1,0 +1,129 @@
+name: justina
+
+# Every Justina component runs here and addresses its peers by service name — never localhost (§6).
+services:
+
+  justina-sqlserver:
+    # Authoritative receipt state, conversation state, idempotency keys and the audit trail.
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: justina-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?set MSSQL_SA_PASSWORD in .env}
+      MSSQL_PID: Developer
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+    networks: [justina-network]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -C -Q "SELECT 1" -b
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 40s
+    restart: unless-stopped
+
+  justina-app:
+    # The deterministic execution layer: business rules, state machine, validation, external API calls.
+    build:
+      context: .
+      dockerfile: src/Justina.Api/Dockerfile
+    container_name: justina-app
+    depends_on:
+      justina-sqlserver:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      ConnectionStrings__Justina: >-
+        Server=justina-sqlserver,1433;Database=Justina;User Id=sa;Password=${MSSQL_SA_PASSWORD};
+        TrustServerCertificate=True;Encrypt=True;MultipleActiveResultSets=False
+      ToolApi__SharedSecret: ${JUSTINA_TOOL_SECRET:?set JUSTINA_TOOL_SECRET in .env}
+      OpenAiVision__ApiKey: ${OPENAI_API_KEY:-}
+      OpenAiVision__Model: ${OPENAI_VISION_MODEL:-gpt-4.1}
+      Telegram__BotToken: ${TELEGRAM_BOT_TOKEN:-}
+      WhatsApp__AccessToken: ${WHATSAPP_ACCESS_TOKEN:-}
+      WhatsApp__PhoneNumberId: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WhatsApp__AppSecret: ${WHATSAPP_APP_SECRET:-}
+      WhatsApp__WebhookVerifyToken: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-}
+      ExpenseApi__BaseUrl: ${EXPENSE_API_URL:-}
+      ExpenseApi__ApiKey: ${EXPENSE_API_KEY:-}
+      RecruitmentApi__BaseUrl: ${RECRUITMENT_API_URL:-}
+      RecruitmentApi__ApiKey: ${RECRUITMENT_API_KEY:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+    volumes:
+      - justina-media:/var/justina/media
+    networks: [justina-network]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health/live || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  justina-openclaw:
+    # The AI/agent layer: conversation, intent routing, agent orchestration, tool selection.
+    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}
+    container_name: justina-openclaw
+    depends_on:
+      justina-app:
+        condition: service_healthy
+    environment:
+      OPENCLAW_CONFIG_DIR: /config
+      JUSTINA_TOOL_BASE_URL: http://justina-app:8080
+      JUSTINA_TOOL_SECRET: ${JUSTINA_TOOL_SECRET}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+      WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-}
+    volumes:
+      - openclaw-config:/config
+      - ./docker/openclaw:/seed:ro
+    networks: [justina-network]
+    restart: unless-stopped
+
+  justina-nginx:
+    # Reverse proxy only. Terminates the tunnel, enforces size limits and timeouts, adds security headers.
+    # It deliberately does not expose the tool API to the internet.
+    image: nginx:1.27-alpine
+    container_name: justina-nginx
+    depends_on:
+      - justina-openclaw
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+    networks: [justina-network]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost/nginx-health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  justina-ngrok:
+    # Public ingress for channel webhooks during development.
+    image: ngrok/ngrok:latest
+    container_name: justina-ngrok
+    depends_on:
+      - justina-nginx
+    command: ["http", "justina-nginx:80", "--log", "stdout"]
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:?set NGROK_AUTHTOKEN in .env}
+    ports:
+      # Inspector only, bound to the host loopback so the tunnel dashboard is not itself public.
+      - "127.0.0.1:4040:4040"
+    networks: [justina-network]
+    restart: unless-stopped
+
+networks:
+  justina-network:
+    name: justina-network
+    driver: bridge
+
+volumes:
+  sqlserver-data:
+  openclaw-config:
+  justina-media:
