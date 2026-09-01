@@ -16,12 +16,12 @@ Baseline to compare against:
 
 | Project | Tests | Expected |
 |---|---|---|
-| `Justina.ArchitectureTests` | 15 | Passed |
+| `Justina.ArchitectureTests` | 20 | Passed |
 | `Justina.Core.UnitTests` | 17 | Passed |
-| `Justina.Expense.UnitTests` | 63 | Passed |
+| `Justina.Expense.UnitTests` | 68 | Passed |
 | `Justina.IntegrationTests` | 10 | Passed |
 | `Justina.Recruitment.UnitTests` | 7 | Passed |
-| **Total** | **112** | **0 failed, 0 skipped** |
+| **Total** | **122** | **0 failed, 0 skipped** |
 
 The build must produce **0 warnings and 0 errors**. `Directory.Build.props` sets
 `TreatWarningsAsErrors`, so a warning is a build failure, not a nag.

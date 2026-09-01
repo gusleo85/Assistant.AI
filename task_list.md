@@ -6,7 +6,7 @@ Companion to `plan/task.md`. One line per deliverable, ticked only when the work
 **Legend:** `[x]` done and verified · `[~]` implemented but not verified end to end · `[ ]` not started ·
 `[!]` blocked
 
-**Current state:** plan approved; first implementation pass complete. Solution builds; **112 automated
+**Current state:** plan approved; first implementation pass complete. Solution builds; **143 automated
 tests pass**. The full Docker stack, live channels and a live Expense API have **not** been exercised —
 those are `[~]`, not `[x]`.
 
@@ -79,8 +79,8 @@ those are `[~]`, not `[x]`.
 - [x] `tests/Justina.ArchitectureTests`
 - [x] `tests/Justina.IntegrationTests`
 - [x] Warnings-as-errors in `Directory.Build.props`
-- [ ] CI pipeline (build, test, `dotnet list package --vulnerable`)
-- [ ] `.editorconfig`
+- [x] CI pipeline (build, all test projects, vulnerable-package gate, compose validation, no-.env check)
+- [x] `.editorconfig`
 
 ---
 
@@ -150,7 +150,7 @@ those are `[~]`, not `[x]`.
 - [x] `AuthorizationCommandDecorator` (+ query equivalent)
 - [x] `IdempotencyCommandDecorator`
 - [x] Failures are never cached, so transient errors stay retryable
-- [ ] Test asserting queries never call `SaveChanges`
+- [x] Architecture test: query handlers cannot reach `IUnitOfWork`
 
 ---
 
@@ -277,8 +277,8 @@ those are `[~]`, not `[x]`.
 - [x] Media stored outside the web root with TTL cleanup, hashed filenames
 - [x] Tool API fails closed without a configured secret
 - [x] Container runs as non-root
-- [ ] Log redactor for `Authorization` headers (no credential is currently logged, but there is no guard)
-- [ ] Dependency vulnerability scan in CI
+- [x] Credential scrubbing in logs and traces (`SecretScrubber`; Telegram client loggers removed)
+- [x] Dependency vulnerability scan in CI
 - [ ] Rate limiting on the tool API
 
 ---
@@ -339,7 +339,7 @@ those are `[~]`, not `[x]`.
 
 ## Phase 17 — Test pass (TESTER)
 
-- [x] Automated suite executed: 112 tests, 0 failures
+- [x] Automated suite executed: 143 tests, 0 failures
 - [x] `test/test-report.md` written with real evidence and explicit NOT TESTED entries
 - [~] Docker startup / shutdown / restart — **not exercised**
 - [~] Agent routing — **prompts written; not exercised against a live model**

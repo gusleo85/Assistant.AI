@@ -26,12 +26,12 @@ for p in tests/*/; do dotnet test "$p" --nologo -v q; done
 
 | Project | Tests | Result |
 |---|---|---|
-| `Justina.ArchitectureTests` | 15 | Passed |
+| `Justina.ArchitectureTests` | 20 | Passed |
 | `Justina.Core.UnitTests` | 17 | Passed |
-| `Justina.Expense.UnitTests` | 63 | Passed |
+| `Justina.Expense.UnitTests` | 68 | Passed |
 | `Justina.IntegrationTests` | 10 | Passed |
 | `Justina.Recruitment.UnitTests` | 7 | Passed |
-| **Total** | **112** | **0 failed, 0 skipped** |
+| **Total** | **122** | **0 failed, 0 skipped** |
 
 The build produced 0 warnings and 0 errors. Warnings are errors in `Directory.Build.props`, so a green
 build genuinely means clean.
@@ -48,7 +48,7 @@ No vulnerable packages in any of the 15 projects.
 
 Fast, isolated, no I/O. These are where the business rules live.
 
-### `tests/Justina.Expense.UnitTests` (63 tests)
+### `tests/Justina.Expense.UnitTests` (68 tests)
 
 The correctness core of the product. Three areas:
 
@@ -92,7 +92,7 @@ without `recruitment.search` is refused by the decorator.
 
 ## Level 2 — Architecture tests
 
-`tests/Justina.ArchitectureTests` (15 tests, NetArchTest). These enforce the layering rules at build
+`tests/Justina.ArchitectureTests` (20 tests, NetArchTest). These enforce the layering rules at build
 time so nobody has to catch them in review:
 
 - No domain or application assembly depends on EF Core, `Microsoft.Data.SqlClient`, `System.Net.Http`,
@@ -187,7 +187,7 @@ cannot be talked past. The manual half proves the agent actually behaves that wa
 Before a manual test pass starts:
 
 - `dotnet build Justina.slnx` succeeds with 0 warnings and 0 errors.
-- All 112 automated tests pass.
+- All 122 automated tests pass.
 - `docker compose config` exits 0.
 - `justina-app` starts and `/health/ready` returns 200. **This is currently blocked** — see
   [`test-environment.md`](test-environment.md), blocker B1.

@@ -48,7 +48,7 @@ dotnet build Justina.slnx
 for p in tests/*/; do dotnet test "$p" --nologo -v q; done
 ```
 
-112 tests across five projects. They need no network, no Docker and no API keys.
+122 tests across five projects. They need no network, no Docker and no API keys.
 
 ## Shared conventions
 

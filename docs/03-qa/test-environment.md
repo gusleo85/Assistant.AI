@@ -136,7 +136,7 @@ dotnet build Justina.slnx
 for p in tests/*/; do dotnet test "$p" --nologo -v q; done
 ```
 
-Expected: 112 tests pass across 5 projects, 0 failed, 0 skipped. Build produces 0 warnings and
+Expected: 122 tests pass across 5 projects, 0 failed, 0 skipped. Build produces 0 warnings and
 0 errors — warnings are errors, so anything less than clean is a real problem.
 
 Dependency scan:

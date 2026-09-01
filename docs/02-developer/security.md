@@ -53,9 +53,17 @@ confirm. Covered by a test in `ReceiptNormalizerTests`.
 Never in prompts, tool arguments, logs, or user-facing messages.
 
 - Configuration only; `.env` is git-ignored and `appsettings.json` ships every secret blank.
-- The Telegram bot token appears in URL paths, so those URLs are never logged — only status codes.
+- **Telegram puts the bot token in the URL path.** Default `HttpClient` logging and HTTP tracing both
+  record request URLs, so without intervention the token would be written to logs and span attributes.
+  Three things prevent it:
+  - `RemoveAllLoggers()` on the Telegram clients — the adapters log status codes only;
+  - `System.Net.Http.HttpClient` pinned to `Warning`;
+  - `SecretScrubber.Redact` applied to `url.full` on every outbound HTTP span, which also strips
+    `access_token`, `api_key`, `token`, `secret`, `password` and `signature` query values while leaving
+    the rest of the URL useful.
 - Provider and API error bodies are logged truncated for diagnosis and **never** relayed to the user.
-- `Authorization` headers are not logged.
+- `Authorization` headers are not logged; `SecretScrubber.IsSensitiveHeader` names the headers that must
+  never be recorded.
 - A container image never contains a credential; they arrive as environment variables at run time.
 
 ## Tool API

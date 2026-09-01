@@ -3,6 +3,7 @@ using Justina.Api.Security;
 using Justina.Api.Tools;
 using Justina.Core.Infrastructure;
 using Justina.Core.Infrastructure.Persistence;
+using Justina.Core.Infrastructure.Security;
 using Justina.Expense.Application;
 using Justina.Expense.Infrastructure;
 using Justina.Recruitment.Application;
@@ -21,6 +22,8 @@ builder.Host.UseSerilog((context, configuration) => configuration
     .ReadFrom.Configuration(context.Configuration)
     .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
     .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
+    // Default HttpClient logging records request URIs, which for some channels contain the credential.
+    .MinimumLevel.Override("System.Net.Http.HttpClient", LogEventLevel.Warning)
     .Enrich.FromLogContext()
     .WriteTo.Console(new Serilog.Formatting.Compact.CompactJsonFormatter()));
 
@@ -47,7 +50,13 @@ builder.Services.AddOpenTelemetry()
     .ConfigureResource(resource => resource.AddService("justina-app"))
     .WithTracing(tracing => tracing
         .AddAspNetCoreInstrumentation()
-        .AddHttpClientInstrumentation()
+        .AddHttpClientInstrumentation(options =>
+        {
+            // Spans record the full request URL, and the Telegram bot token lives in the URL path.
+            // Overwrite the recorded URL with a scrubbed one rather than dropping the span (§40).
+            options.EnrichWithHttpRequestMessage = (activity, request) =>
+                activity.SetTag("url.full", SecretScrubber.Redact(request.RequestUri));
+        })
         .AddOtlpExporter())
     .WithMetrics(metrics => metrics
         .AddAspNetCoreInstrumentation()

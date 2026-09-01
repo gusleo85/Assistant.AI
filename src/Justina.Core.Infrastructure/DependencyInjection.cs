@@ -73,19 +73,22 @@ public static class CoreInfrastructureServiceCollectionExtensions
 
     private static void AddChannels(IServiceCollection services)
     {
+        // RemoveAllLoggers: Telegram carries the bot token in the URL path, and the default HttpClient
+        // loggers record request URIs. Suppressing them here is the only way to keep the token out of the
+        // logs entirely; the adapters log their own status-code-only lines instead (§40).
         services.AddHttpClient<TelegramMediaDownloader>((provider, client) =>
         {
             var options = provider.GetRequiredService<IOptions<TelegramOptions>>().Value;
             client.BaseAddress = new Uri($"{options.ApiBaseUrl.TrimEnd('/')}/");
             client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
-        });
+        }).RemoveAllLoggers();
 
         services.AddHttpClient<TelegramResponder>((provider, client) =>
         {
             var options = provider.GetRequiredService<IOptions<TelegramOptions>>().Value;
             client.BaseAddress = new Uri($"{options.ApiBaseUrl.TrimEnd('/')}/");
             client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
-        });
+        }).RemoveAllLoggers();
 
         services.AddHttpClient<WhatsAppMediaDownloader>((provider, client) =>
         {

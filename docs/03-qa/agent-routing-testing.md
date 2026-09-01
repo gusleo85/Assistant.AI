@@ -176,7 +176,7 @@ This is the strongest guarantee in the system and it needs no running services:
 dotnet test tests/Justina.ArchitectureTests --nologo -v q
 ```
 
-**Expected.** 15 passed. Two of those tests are `Expense_never_depends_on_Recruitment` and
+**Expected.** 20 passed. Two of those tests are `Expense_never_depends_on_Recruitment` and
 `Recruitment_never_depends_on_Expense`. They inspect the compiled assemblies for a dependency in
 either direction, across domain, application and infrastructure.
 

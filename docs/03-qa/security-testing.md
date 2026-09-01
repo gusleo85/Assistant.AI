@@ -28,6 +28,7 @@ asked to close.
 |---|---|---|
 | B1 | Invariant globalization breaks every SQL Server connection; the app cannot start | Blocker |
 | B2 | `/health/live` includes the database check | Medium |
+| B5 | A receipt can be read, edited, confirmed or cancelled from another conversation | High |
 | S1 | No log redactor exists | Medium |
 | S2 | Telegram bot token sits in the request path; HTTP client tracing is enabled — exposure unverified | Medium |
 | S3 | WhatsApp `X-Hub-Signature-256` verification is not implemented in this repository | Medium |
