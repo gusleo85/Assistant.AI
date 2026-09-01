@@ -240,6 +240,24 @@ public static class JustinaMcpTools
                 new SubmitExpenseCommand(context, ParseId(receiptId)),
                 cancellationToken));
 
+    [McpServerTool(Name = "justina_expense_options", ReadOnly = true, Idempotent = true, OpenWorld = true)]
+    [Description(
+        "List the categories, taxes and currencies this company actually accepts. Call this when a value "
+        + "is missing or did not match the catalogue, so you can offer the user real choices instead of "
+        + "an open question. Never invent a category, tax or currency that is not in this list.")]
+    public static Task<string> ExpenseOptionsAsync(
+        RequestContextFactory contexts,
+        IDispatcher dispatcher,
+        [Description("Channel the message arrived on: telegram or whatsapp.")] string channel,
+        [Description("The channel's own numeric user id for the person speaking.")] string userId,
+        [Description("The channel's own chat/conversation id.")] string conversationId,
+        CancellationToken cancellationToken) =>
+        RunAsync<ExpenseOptions>(
+            contexts,
+            Envelope(channel, userId, conversationId),
+            cancellationToken,
+            context => dispatcher.QueryAsync(new GetExpenseOptionsQuery(context), cancellationToken));
+
     [McpServerTool(Name = "justina_recruitment_search_candidates", ReadOnly = true, Idempotent = true, OpenWorld = true)]
     [Description(
         "Search for candidates. Recruitment execution is not connected yet, so this currently reports that "

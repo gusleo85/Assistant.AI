@@ -26,6 +26,7 @@ public static class ExpenseApplicationServiceCollectionExtensions
         services.AddQueryHandler<GetReceiptQuery, ReceiptSnapshot, GetReceiptQueryHandler>();
         services.AddQueryHandler<GetReceiptStatusQuery, ReceiptStatus, GetReceiptStatusQueryHandler>();
         services.AddQueryHandler<GetActiveExtractionQuery, ReceiptExtractionOutcome, GetActiveExtractionQueryHandler>();
+        services.AddQueryHandler<GetExpenseOptionsQuery, ExpenseOptions, GetExpenseOptionsQueryHandler>();
 
         return services;
     }

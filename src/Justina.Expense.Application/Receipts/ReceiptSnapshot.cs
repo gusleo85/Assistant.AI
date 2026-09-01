@@ -28,6 +28,22 @@ public sealed record ReceiptSnapshot(
     bool AwaitingConfirmation,
     bool IsSubmittable,
     string? MissingField,
+
+    /// <summary>
+    /// A category was read from the receipt but matched nothing in the company catalogue. The name is
+    /// still shown, because it is what the receipt says — but it will not file against anything, so the
+    /// user has to pick a real one.
+    /// </summary>
+    bool CategoryUnresolved,
+
+    /// <summary>The currency code did not match a catalogue currency. Same reasoning.</summary>
+    bool CurrencyUnresolved,
+
+    /// <summary>
+    /// The receipt printed a tax amount but nothing matched the company's predefined taxes. Worth raising
+    /// rather than filing as no tax at all — the amount is evidence a tax exists.
+    /// </summary>
+    bool TaxUnresolved,
     string? ExternalExpenseId,
     string? FailureReason)
 {
@@ -57,6 +73,10 @@ public sealed record ReceiptSnapshot(
             receipt.State == ReceiptState.WaitingConfirmation,
             submittable,
             missingField,
+            // A name with no id resolved against nothing in the catalogue.
+            receipt.Category is not null && receipt.CategoryId is null,
+            receipt.Currency is not null && receipt.CurrencyId is null,
+            receipt.TaxAmount is not null && receipt.TaxIds.Count == 0,
             receipt.ExternalExpenseId,
             receipt.FailureReason);
     }
