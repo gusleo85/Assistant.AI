@@ -66,6 +66,11 @@
   // the reasoning model does not support and which the gateway warns degrades performance.
   tools: {
     profile: "messaging",
+
+    // The bundled codex runtime turns Code Mode on by default, but gpt-5.4 does not advertise support
+    // for it and the gateway warns that it degrades performance. Justina calls eight typed tools; it
+    // never writes or runs code, so there is nothing here for Code Mode to do.
+    codeMode: false,
   },
 
   agents: {
@@ -77,6 +82,16 @@
       model: {
         primary: "openai/gpt-5.4",
         fallbacks: [],
+      },
+
+      // Direct OpenAI API traffic rather than the bundled Codex harness. Codex auto-enables Code Mode,
+      // which gpt-5.4 does not advertise support for — the gateway warns on every turn that it degrades
+      // performance. Justina is not a coding agent: it holds a conversation and calls eight typed tools,
+      // so the harness brings cost and no benefit.
+      models: {
+        "openai/gpt-5.4": {
+          agentRuntime: { id: "openclaw" },
+        },
       },
     },
     entries: {
@@ -100,9 +115,18 @@
       // "allowlist" policy with no entries is rejected by config validation anyway.
       dmPolicy: "pairing",
 
+      // Written by the gateway when a pairing code was approved. Kept here so reseeding the config
+      // volume does not silently revoke an approved sender.
+      allowFrom: ["646882196"],
+
       // Groups stay closed until a chat is listed explicitly.
       groupPolicy: "allowlist",
     },
+  },
+
+  commands: {
+    // Owner-only commands. Set by the gateway on first pairing approval.
+    ownerAllowFrom: ["telegram:646882196"],
   },
 
   logging: {

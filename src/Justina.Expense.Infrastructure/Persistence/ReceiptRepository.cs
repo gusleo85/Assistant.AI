@@ -34,7 +34,18 @@ public sealed class ReceiptRepository(JustinaDbContext context) : IReceiptReposi
             .Where(r => r.ConversationId == conversationId
                 && r.State != ReceiptState.Submitted
                 && r.State != ReceiptState.Cancelled)
-            .OrderByDescending(r => r.CreatedAtUtc)
+            // Ordered by what needs the user, not by age. A receipt stuck in Received holds nothing to
+            // show and nothing to confirm; if it merely happened to be created last, ordering by time
+            // alone would let it shadow the receipt actually awaiting an answer — and a "yes" would then
+            // land on an empty shell.
+            .OrderBy(r =>
+                r.State == ReceiptState.WaitingConfirmation ? 0
+                : r.State == ReceiptState.SubmissionFailed ? 1
+                : r.State == ReceiptState.Confirmed ? 2
+                : r.State == ReceiptState.Extracting ? 3
+                : r.State == ReceiptState.ExtractionFailed ? 4
+                : 5)
+            .ThenByDescending(r => r.CreatedAtUtc)
             .ThenBy(r => r.SequenceInBatch)
             .FirstOrDefaultAsync(cancellationToken);
 

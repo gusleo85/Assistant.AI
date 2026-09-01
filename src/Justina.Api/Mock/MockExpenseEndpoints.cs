@@ -77,14 +77,17 @@ public static class MockExpenseEndpoints
 
         var receiptId = Guid.NewGuid().ToString();
 
-        // Logged in full: this is a mock, and seeing the exact payload is the entire point of it.
+        // Every id in the payload, resolved back to the name it stands for. Reading a log full of GUIDs
+        // tells you nothing about whether the right category was chosen; reading "Meals and
+        // Entertainment" tells you immediately.
         logger.LogInformation(
-            "MOCK Receipt/chat/scan accepted a receipt for organization {OrganizationId} member {MemberId} "
-            + "as {ReceiptId}. NOTHING WAS SENT TO THE EXPENSE SYSTEM. Payload: {Payload}",
-            organizationId,
-            memberId,
+            "MOCK Receipt/chat/scan accepted a receipt as {ReceiptId}. "
+            + "NOTHING WAS SENT TO THE EXPENSE SYSTEM.\n{Summary}",
             receiptId,
-            payload.ToJsonString());
+            Describe(payload, organizationId, memberId));
+
+        // The raw payload too, for anyone diffing against the eventual real contract.
+        logger.LogInformation("MOCK Receipt/chat/scan raw payload: {Payload}", payload.ToJsonString());
 
         return Results.Ok(new
         {
@@ -94,6 +97,123 @@ public static class MockExpenseEndpoints
             memberId,
             mock = true,
         });
+    }
+
+    /// <summary>
+    /// Renders the payload with every identifier resolved to the name it stands for.
+    ///
+    /// The point is reviewability: a reader needs to see that "Meals and Entertainment" was chosen and
+    /// that it resolved to a real catalogue row — not a GUID they would have to look up by hand to know
+    /// whether the mapping was right.
+    /// </summary>
+    private static string Describe(JsonObject payload, string organizationId, string memberId)
+    {
+        var categories = Lookup(MockDataResources.Categories);
+        var currencies = Lookup(MockDataResources.Currencies);
+        var taxes = LookupTaxes();
+
+        string? Text(string key) => payload[key]?.GetValue<string>();
+
+        var lines = new List<string>
+        {
+            $"  organization : {organizationId} ({Organization()})",
+            $"  member       : {memberId} ({Member(memberId)})",
+            $"  merchant     : {Text("merchantName")}",
+            $"  reference    : {Text("referenceNumber")}",
+            $"  date         : {Text("date")}",
+            $"  amount       : {Text("amount")}",
+            $"  currency     : {Describe(Text("currencyId"), currencies, Text("currencyCode"))}",
+            $"  category     : {Describe(Text("categoryId"), categories, Text("category"))}",
+            $"  location     : {Text("location") ?? "(none)"}",
+            $"  tax amount   : {payload["taxAmount"]?.ToJsonString() ?? "(none)"}",
+        };
+
+        var taxIds = payload["taxIds"]?.AsArray();
+
+        if (taxIds is null || taxIds.Count == 0)
+        {
+            lines.Add("  taxes        : (none matched)");
+        }
+        else
+        {
+            lines.Add("  taxes        :");
+            lines.AddRange(taxIds.Select(id =>
+                $"      - {Describe(id?.GetValue<string>(), taxes, null)}"));
+        }
+
+        var lineItems = payload["lineItems"]?.AsArray();
+
+        if (lineItems is not null && lineItems.Count > 0)
+        {
+            lines.Add($"  line items   : {lineItems.Count}");
+            lines.AddRange(lineItems.Select(item =>
+                $"      - {item?["description"]?.GetValue<string>()} "
+                + $"x{item?["quantity"]?.ToJsonString()} = {item?["amount"]?.ToJsonString()}"));
+        }
+
+        return string.Join('\n', lines);
+    }
+
+    /// <summary>An id beside the name it resolves to, or a clear note when it resolves to nothing.</summary>
+    private static string Describe(string? id, IReadOnlyDictionary<string, string> names, string? fallbackName)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return fallbackName is null
+                ? "(none)"
+                : $"{fallbackName} — NO ID RESOLVED";
+        }
+
+        return names.TryGetValue(id, out var name)
+            ? $"{name} [{id}]"
+            : $"{fallbackName ?? "(unknown)"} [{id}] — ID NOT IN CATALOGUE";
+    }
+
+    /// <summary>Maps every catalogue id to its name, from the same fixture the catalogue endpoint serves.</summary>
+    private static IReadOnlyDictionary<string, string> Lookup(string fileName)
+    {
+        var items = JsonNode.Parse(MockDataResources.Read(fileName) ?? "[]")?.AsArray();
+
+        return items?
+            .Where(node => node?["id"] is not null && node["name"] is not null)
+            .ToDictionary(
+                node => node!["id"]!.GetValue<string>(),
+                node => node!["name"]!.GetValue<string>(),
+                StringComparer.OrdinalIgnoreCase)
+            ?? new Dictionary<string, string>();
+    }
+
+    /// <summary>
+    /// A tax reads as "GST Yes 8 (8.00%)". The rate is part of the identity — two taxes can share a name
+    /// and differ only by rate, so a name alone would not tell a reviewer which one was chosen.
+    /// </summary>
+    private static IReadOnlyDictionary<string, string> LookupTaxes()
+    {
+        var items = JsonNode.Parse(MockDataResources.Read(MockDataResources.Taxes) ?? "[]")?.AsArray();
+
+        return items?
+            .Where(node => node?["id"] is not null && node["name"] is not null)
+            .ToDictionary(
+                node => node!["id"]!.GetValue<string>(),
+                node => $"{node!["name"]!.GetValue<string>()} ({node["attribute"]?.GetValue<string>()}%)",
+                StringComparer.OrdinalIgnoreCase)
+            ?? new Dictionary<string, string>();
+    }
+
+    private static string Organization() =>
+        JsonNode.Parse(MockDataResources.Read(MockDataResources.Organization) ?? "{}")?["name"]
+            ?.GetValue<string>() ?? "(unknown)";
+
+    private static string Member(string memberId)
+    {
+        var members = JsonNode.Parse(MockDataResources.Read(MockDataResources.Members) ?? "[]")?.AsArray();
+
+        var member = members?.FirstOrDefault(node =>
+            string.Equals(node?["id"]?.GetValue<string>(), memberId, StringComparison.OrdinalIgnoreCase));
+
+        return member?["fullName"]?.GetValue<string>()
+            ?? member?["email"]?.GetValue<string>()
+            ?? "(unknown)";
     }
 
     /// <summary>

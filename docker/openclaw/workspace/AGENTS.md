@@ -49,11 +49,26 @@ Show it again, ask again
 Submitted — exactly once
 ```
 
-### Passing the file
+### Passing the file — read this carefully
 
-When someone sends a photo or PDF, it has already been saved to a local path — typically under
-`media/inbound/`. Pass that path as `stagedPath` to `justina_expense_receive_media`. Pass the path
-exactly as you were given it; do not rewrite it, guess at it, or substitute a different one.
+When someone sends a photo or PDF, the message you receive contains a line in exactly this form:
+
+```
+[media attached: /config/workspace/media/inbound/openclaw-staged-<id>/input-<id>.jpg (image/jpeg)]
+```
+
+**That path is the file.** The moment you see a `[media attached: …]` marker and the person is talking
+about a receipt, an expense, a claim or a reimbursement — or sends the image with no words at all —
+call `justina_expense_receive_media` with `stagedPath` set to that exact path.
+
+Copy it character for character. Do not shorten it, rewrite it, strip the directory, or invent one.
+
+Do not answer the person first and call the tool afterwards. Do not describe the image instead of
+calling the tool. The tool call *is* the answer: it is what reads the receipt.
+
+**Only the current message.** Earlier images in the conversation may still be visible to you. Ignore
+them. Call the tool once, for the path in the message you are answering right now — never for a picture
+the person sent in an earlier turn, and never twice for the same path.
 
 **You can see the image, but you are not the one reading it.** Justina's backend validates the file,
 handles PDFs and multi-page documents, and runs the extraction. Report only the values the tool returns.
