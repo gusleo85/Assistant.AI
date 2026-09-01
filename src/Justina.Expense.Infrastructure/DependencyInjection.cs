@@ -158,6 +158,28 @@ public static class ExpenseInfrastructureServiceCollectionExtensions
         services.AddJLHttpClient(configuration);
         services.AddIdentitySdk(configuration);
 
+        // Which company, in the identity server's terms. Stub answers from the embedded fixture — the
+        // mapping for our one dev company is a constant — so identity can be live while membership is
+        // not. Live performs the real lookup.
+        if (options.ResolvedMembershipMode == ExpenseApiMode.Live)
+        {
+            services
+                .AddHttpClient<IJustLoginCompanyDirectory, MembershipJustLoginCompanyDirectory>((provider, client) =>
+                {
+                    var baseUrl = configuration["JLHttpClient:BaseUrl"];
+
+                    if (!string.IsNullOrWhiteSpace(baseUrl))
+                    {
+                        client.BaseAddress = new Uri($"{baseUrl.TrimEnd('/')}/");
+                    }
+                })
+                .AddStandardResilienceHandler();
+        }
+        else
+        {
+            services.AddSingleton<IJustLoginCompanyDirectory, MockJustLoginCompanyDirectory>();
+        }
+
         services.AddSingleton<IExpenseAccessTokenProvider, JustLoginAccessTokenProvider>();
     }
 

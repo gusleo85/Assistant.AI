@@ -20,6 +20,9 @@ public static class MockDataResources
     public const string ChannelLinks = "channel-links.json";
     public const string Organization = "organization.json";
 
+    /// <summary>The membership API's company record — the companyGuid to CompanyID mapping.</summary>
+    public const string MembershipCompany = "membership-company.json";
+
     /// <returns>The file's JSON, or <c>null</c> when no such resource is embedded.</returns>
     public static string? Read(string fileName)
     {

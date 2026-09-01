@@ -65,6 +65,7 @@ services:
       # Live swaps the fixed ApiKey for company tokens from JustLogin identity, cached per company.
       # The three IdentitySDK values below are secrets and come from .env, never from this file.
       ExpenseApi__IdentityMode: ${EXPENSE_API_IDENTITY_MODE:-}
+      ExpenseApi__MembershipMode: ${EXPENSE_API_MEMBERSHIP_MODE:-}
       JLHttpClient__BaseUrl: ${JL_HTTP_CLIENT_URL:-}
       IdentitySDK__ClientID: ${IDENTITY_CLIENT_ID:-}
       IdentitySDK__ClientSecret: ${IDENTITY_CLIENT_SECRET:-}

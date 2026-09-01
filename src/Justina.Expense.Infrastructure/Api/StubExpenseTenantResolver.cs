@@ -55,10 +55,14 @@ public sealed class StubExpenseTenantResolver(ILogger<StubExpenseTenantResolver>
                 member.OrganizationId);
         }
 
-        // CompanyId is the separate legacy identifier the membership API returns and the token request
-        // sends as its CompanyID form field. We have no mock value for it, so the 32-character company
-        // GUID stands in — nothing in Stub mode reads it.
-        var tenant = new ExpenseTenant(member.OrganizationId, member.CompanyGuid, member.Id);
+        // CompanyId is the separate identifier the membership API returns and the token request sends as
+        // its CompanyID form field. It comes from the membership fixture when that fixture describes
+        // this company; otherwise the company GUID stands in, as it always has, and only a live token
+        // request would notice the difference — IJustLoginCompanyDirectory resolves it properly there.
+        var tenant = new ExpenseTenant(
+            member.OrganizationId,
+            StubMembershipCompany.CompanyIdFor(member.CompanyGuid) ?? member.CompanyGuid,
+            member.Id);
 
         return Task.FromResult(Result.Success(tenant));
     }

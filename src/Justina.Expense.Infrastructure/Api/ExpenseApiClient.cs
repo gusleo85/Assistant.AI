@@ -66,10 +66,22 @@ public sealed class ExpenseApiOptions
     /// </summary>
     public ExpenseApiMode? IdentityMode { get; set; }
 
+    /// <summary>
+    /// Where the company's <c>CompanyID</c> comes from — the identifier the token request needs and the
+    /// only reason the membership API is in this flow. Stub reads the embedded fixture, which is exact
+    /// for the one dev company; Live calls <c>membership/v2/companies/{guid}</c>.
+    ///
+    /// Separate from <see cref="IdentityMode"/> so a real identity server can mint real tokens while the
+    /// company mapping is still served locally.
+    /// </summary>
+    public ExpenseApiMode? MembershipMode { get; set; }
+
     public ExpenseApiMode ResolvedCatalogueMode => CatalogueMode ?? Mode;
 
     /// <summary>Defaults to the static key, so no existing configuration changes behaviour.</summary>
     public ExpenseApiMode ResolvedIdentityMode => IdentityMode ?? ExpenseApiMode.Stub;
+
+    public ExpenseApiMode ResolvedMembershipMode => MembershipMode ?? ExpenseApiMode.Stub;
 
     public ExpenseApiMode ResolvedTenantMode => TenantMode ?? Mode;
 

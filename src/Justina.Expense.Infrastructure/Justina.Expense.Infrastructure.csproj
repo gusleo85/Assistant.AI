@@ -21,6 +21,7 @@
     <EmbeddedResource Include="MockData\taxes.json" />
     <EmbeddedResource Include="MockData\currencies.json" />
     <EmbeddedResource Include="MockData\organization.json" />
+    <EmbeddedResource Include="MockData\membership-company.json" />
   </ItemGroup>
 
   <PropertyGroup>

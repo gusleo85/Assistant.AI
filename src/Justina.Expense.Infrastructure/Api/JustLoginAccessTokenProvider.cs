@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Net;
 using Justina.Core.Domain.Results;
 using Justina.Expense.Application.Abstractions;
 using JustLogin.Identity.SDK.Interfaces;
@@ -20,6 +21,7 @@ namespace Justina.Expense.Infrastructure.Api;
 /// </summary>
 public sealed class JustLoginAccessTokenProvider(
     IAuthenticationClient authenticationClient,
+    IJustLoginCompanyDirectory companies,
     ILogger<JustLoginAccessTokenProvider> logger)
     : IExpenseAccessTokenProvider
 {
@@ -47,13 +49,35 @@ public sealed class JustLoginAccessTokenProvider(
             return Result.Success(cached.Value);
         }
 
+        // Which company, in the identity server's own terms. Split out from the token request because
+        // the two halves are believed independently: identity is live today, while the membership
+        // lookup can be served from a fixture whose answer for our one dev company is a constant.
+        var companyId = await companies.GetCompanyIdAsync(tenant, cancellationToken).ConfigureAwait(false);
+
+        if (companyId.IsFailure)
+        {
+            return Result.Failure<string>(companyId.Error);
+        }
+
         try
         {
-            var token = await authenticationClient
-                .GetCompanySystemToken(companyGuid, cancellationToken)
+            // Exactly the request the SDK's GetCompanySystemToken makes after its own membership lookup:
+            // client credentials plus CompanyID. client_id, client_secret and scope are added by the SDK.
+            var response = await authenticationClient
+                .GenerateToken(
+                    new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["grant_type"] = "client_credentials",
+                        ["CompanyID"] = companyId.Value,
+                    },
+                    cancellationToken)
                 .ConfigureAwait(false);
 
-            if (token is null || string.IsNullOrWhiteSpace(token.AccessToken))
+            var token = response.Response?.FirstOrDefault();
+
+            if (response.HttpStatusCode != HttpStatusCode.OK
+                || token is null
+                || string.IsNullOrWhiteSpace(token.AccessToken))
             {
                 logger.LogError("Identity returned no access token for company {CompanyGuid}", companyGuid);
 

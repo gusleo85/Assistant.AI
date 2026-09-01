@@ -47,6 +47,12 @@ public static class MockExpenseEndpoints
         membership.MapGet("/Organization/{organizationId}", (string organizationId, HttpContext http) =>
             Catalogue(http, organizationId, MockDataResources.Organization));
 
+        // Stands in for the real membership API's own route, which is v2 and takes the 32-character
+        // company GUID. It answers the one question the identity server's token request needs: which
+        // CompanyID this company GUID is. Kept at the real path and version so pointing at the live
+        // service is a base-URL change and nothing else.
+        app.MapGet("/mock/membership/v2/companies/{companyGuid}", MembershipCompany);
+
         return app;
     }
 
@@ -319,7 +325,80 @@ public static class MockExpenseEndpoints
             userId,
             memberId);
 
-        return Results.Content(member.ToJsonString(), "application/json");
+        // The member record carries the organization GUID; the identity server's token request needs the
+        // CompanyID that goes with it. Both are answered here so one call turns a Telegram user id into
+        // everything a company token needs — which is what the real membership API will do too.
+        var enriched = member.DeepClone().AsObject();
+        var company = MembershipCompanyRecord();
+
+        if (company is not null
+            && string.Equals(
+                company["companyGuid"]?.GetValue<string>(),
+                enriched["organizationId"]?.GetValue<string>()?.Replace("-", string.Empty, StringComparison.Ordinal),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            enriched["companyGuid"] = company["companyGuid"]?.GetValue<string>();
+            enriched["companyId"] = company["companyId"]?.GetValue<string>();
+            enriched["companyName"] = company["companyName"]?.GetValue<string>();
+        }
+
+        return Results.Content(enriched.ToJsonString(), "application/json");
+    }
+
+    /// <summary>
+    /// The membership API's company record. It exists for <c>companyId</c>: the identity server's token
+    /// request takes that, not the company GUID, and this mapping is the only reason the real membership
+    /// call is in the token flow at all.
+    /// </summary>
+    private static IResult MembershipCompany(HttpContext http, string companyGuid)
+    {
+        var logger = http.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("MockExpenseApi");
+
+        var unauthorized = RequireSystemToken(http, logger, "membership/v2/companies");
+
+        if (unauthorized is not null)
+        {
+            return unauthorized;
+        }
+
+        var company = MembershipCompanyRecord();
+        var known = company?["companyGuid"]?.GetValue<string>();
+
+        if (company is null
+            || !string.Equals(known, companyGuid, StringComparison.OrdinalIgnoreCase))
+        {
+            // One fixture, one company. Answering for any GUID would hand back another organization's
+            // identifiers, which is how expenses end up filed against the wrong company.
+            logger.LogWarning(
+                "MOCK membership/v2/companies asked for {Requested}; the fixture describes {Known}",
+                companyGuid,
+                known ?? "nothing");
+
+            return Results.Json(
+                new { message = "No such company." },
+                statusCode: StatusCodes.Status404NotFound);
+        }
+
+        if (string.IsNullOrWhiteSpace(company["companyId"]?.GetValue<string>()))
+        {
+            logger.LogWarning(
+                "MOCK membership/v2/companies has no companyId for {CompanyGuid}; a company token cannot " +
+                "be requested until membership-company.json is filled in",
+                companyGuid);
+        }
+
+        return Results.Content(company.ToJsonString(), "application/json");
+    }
+
+    private static JsonObject? MembershipCompanyRecord()
+    {
+        var record = JsonNode.Parse(MockDataResources.Read(MockDataResources.MembershipCompany) ?? "{}")?.AsObject();
+
+        // The fixture documents itself for whoever fills it in; the real endpoint has no such field, and
+        // a mock that answers with more than the thing it imitates teaches callers the wrong shape.
+        record?.Remove("_comment");
+
+        return record;
     }
 
     /// <summary>
