@@ -29,6 +29,8 @@ public sealed class ExtractReceiptCommandHandler(
     IMediaStore mediaStore,
     IDocumentProcessor documentProcessor,
     IVisionProvider vision,
+    IExpenseCatalogue catalogue,
+    IExpenseTenantResolver tenants,
     IUnitOfWork unitOfWork,
     IClock clock,
     ILogger<ExtractReceiptCommandHandler> logger)
@@ -68,13 +70,18 @@ public sealed class ExtractReceiptCommandHandler(
             return await FailAsync(receipt, document.Error, cancellationToken).ConfigureAwait(false);
         }
 
+        // The company's own category and tax lists are folded into the instruction, so the model chooses
+        // from what this company actually uses instead of inventing a category. A catalogue failure is
+        // not fatal: Compose falls back to the unconstrained instruction rather than losing the receipt.
+        var companyCatalogue = await LoadCatalogueAsync(command.Context, cancellationToken).ConfigureAwait(false);
+
         var extraction = await vision
             .ExtractAsync(
                 new VisionRequest(
                     document.Value,
                     ReceiptExtractionSchema.Name,
                     ReceiptExtractionSchema.Json,
-                    ReceiptExtractionSchema.Instruction),
+                    ReceiptExtractionPrompt.Compose(companyCatalogue)),
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -94,7 +101,7 @@ public sealed class ExtractReceiptCommandHandler(
                 .ConfigureAwait(false);
         }
 
-        var snapshots = Materialize(receipt, candidates, now);
+        var snapshots = Materialize(receipt, candidates, companyCatalogue, now);
 
         var saved = await unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
@@ -132,7 +139,35 @@ public sealed class ExtractReceiptCommandHandler(
     /// Turns Vision candidates into receipts. Several candidates become several receipts sharing a batch —
     /// they are never merged into one expense (§25).
     /// </summary>
-    private List<ReceiptSnapshot> Materialize(Receipt receipt, IReadOnlyList<RawReceipt> candidates, DateTimeOffset now)
+    /// <summary>
+    /// Loads the company's catalogue. Every failure — an unresolvable tenant, an API outage — degrades to
+    /// an empty catalogue and an unconstrained prompt, because a receipt the user already sent must not
+    /// be lost to a downstream problem.
+    /// </summary>
+    private async Task<ExpenseCatalogue> LoadCatalogueAsync(
+        RequestContext context,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await tenants.ResolveAsync(context, cancellationToken).ConfigureAwait(false);
+
+        if (tenant.IsFailure)
+        {
+            logger.LogWarning(
+                "No expense tenant resolved for this conversation ({ErrorCode}); extracting without a " +
+                "category or tax catalogue",
+                tenant.Error.Code);
+
+            return ExpenseCatalogue.Empty;
+        }
+
+        return await catalogue.GetAsync(tenant.Value, cancellationToken).ConfigureAwait(false);
+    }
+
+    private List<ReceiptSnapshot> Materialize(
+        Receipt receipt,
+        IReadOnlyList<RawReceipt> candidates,
+        ExpenseCatalogue catalogue,
+        DateTimeOffset now)
     {
         var snapshots = new List<ReceiptSnapshot>(candidates.Count);
 
@@ -142,7 +177,7 @@ public sealed class ExtractReceiptCommandHandler(
             receipts.AddBatch(batch);
             receipt.AttachToBatch(batch.Id, 1, now);
 
-            Complete(receipt, candidates[0], now);
+            Complete(receipt, candidates[0], catalogue, now);
             snapshots.Add(ReceiptSnapshot.From(receipt));
 
             // Siblings share the batch's timestamp, so the sequence — reading order in the document — is
@@ -154,7 +189,7 @@ public sealed class ExtractReceiptCommandHandler(
                 sequence++;
                 var sibling = Receipt.Create(receipt.ConversationId, receipt.SourceMediaId, batch.Id, now, sequence);
                 sibling.BeginExtraction(now);
-                Complete(sibling, candidate, now);
+                Complete(sibling, candidate, catalogue, now);
                 receipts.Add(sibling);
                 snapshots.Add(ReceiptSnapshot.From(sibling));
             }
@@ -162,14 +197,18 @@ public sealed class ExtractReceiptCommandHandler(
             return snapshots;
         }
 
-        Complete(receipt, candidates[0], now);
+        Complete(receipt, candidates[0], catalogue, now);
         snapshots.Add(ReceiptSnapshot.From(receipt));
         return snapshots;
     }
 
-    private static void Complete(Receipt receipt, RawReceipt candidate, DateTimeOffset now)
+    private static void Complete(
+        Receipt receipt,
+        RawReceipt candidate,
+        ExpenseCatalogue catalogue,
+        DateTimeOffset now)
     {
-        var normalized = ReceiptNormalizer.Normalize(candidate);
+        var normalized = ReceiptNormalizer.Normalize(candidate, catalogue);
         receipt.CompleteExtraction(normalized.Fields, normalized.LineItems, now);
     }
 

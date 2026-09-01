@@ -19,6 +19,9 @@ public sealed record ReceiptSnapshot(
     string? ReceiptNumber,
     decimal? TaxAmount,
     IReadOnlyList<ReceiptLineItemSnapshot> LineItems,
+    Guid? CategoryId,
+    IReadOnlyList<Guid> TaxIds,
+    string? Location,
     Guid? BatchId,
     int SequenceInBatch,
     bool AwaitingConfirmation,
@@ -44,6 +47,9 @@ public sealed record ReceiptSnapshot(
             receipt.LineItems
                 .Select(i => new ReceiptLineItemSnapshot(i.Description, i.Quantity, i.UnitPrice, i.Amount))
                 .ToList(),
+            receipt.CategoryId,
+            receipt.TaxIds,
+            receipt.Location,
             receipt.BatchId,
             receipt.SequenceInBatch,
             receipt.State == ReceiptState.WaitingConfirmation,

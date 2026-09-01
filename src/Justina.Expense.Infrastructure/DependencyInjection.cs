@@ -14,11 +14,50 @@ public static class ExpenseInfrastructureServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.Configure<ExpenseApiOptions>(configuration.GetSection(ExpenseApiOptions.SectionName));
+        var section = configuration.GetSection(ExpenseApiOptions.SectionName);
+        services.Configure<ExpenseApiOptions>(section);
 
         services.AddSingleton<IModelConfiguration, ExpenseModelConfiguration>();
         services.AddScoped<IReceiptRepository, ReceiptRepository>();
 
+        var mode = section.GetValue(ExpenseApiOptions.ModeKey, ExpenseApiMode.Stub);
+
+        if (mode == ExpenseApiMode.Stub)
+        {
+            // A stub that reached Production would tell users their expenses were filed when nothing left
+            // the process. Refusing to start is the only failure mode here that cannot be missed.
+            var environment = configuration["ASPNETCORE_ENVIRONMENT"] ?? "Production";
+
+            if (string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"{ExpenseApiOptions.SectionName}:Mode is 'Stub' but the environment is 'Production'. " +
+                    "Stub mode records submissions locally and never contacts the Expense API. Set " +
+                    $"{ExpenseApiOptions.SectionName}__Mode=Live with real credentials, or run outside Production.");
+            }
+
+            services.AddSingleton<IExpenseCatalogue, StubExpenseCatalogue>();
+            services.AddScoped<IExpenseTenantResolver, StubExpenseTenantResolver>();
+            services.AddScoped<IExpenseApiClient, StubExpenseApiClient>();
+
+            return services;
+        }
+
+        // Live mode: the submission client exists and targets a provisional contract (plan risk R1), so it
+        // is wired up and stays compiled and testable. The catalogue and tenant resolvers against
+        // JustLogin are not written yet, so startup still refuses — naming exactly what is missing beats
+        // starting up and filing every expense with no category against an unknown company.
+        services.AddLiveExpenseApiClient();
+
+        throw new InvalidOperationException(
+            $"{ExpenseApiOptions.SectionName}:Mode is 'Live', but the live expense catalogue and tenant " +
+            "resolver are not implemented yet: they need the JustLogin identity credentials and the " +
+            "member-lookup contract. Use Mode=Stub until those land.");
+    }
+
+    private static IServiceCollection AddLiveExpenseApiClient(
+        this IServiceCollection services)
+    {
         services
             .AddHttpClient<IExpenseApiClient, ExpenseApiClient>((provider, client) =>
             {

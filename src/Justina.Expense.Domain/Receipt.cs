@@ -23,6 +23,7 @@ public sealed class Receipt
 {
     private readonly List<ReceiptLineItem> _lineItems = [];
     private readonly List<ReceiptEvent> _events = [];
+    private readonly List<Guid> _taxIds = [];
 
     // EF Core materialization.
     private Receipt()
@@ -72,9 +73,22 @@ public sealed class Receipt
 
     public string? Category { get; private set; }
 
+    /// <summary>
+    /// The Expense API's identifier for <see cref="Category"/>, resolved from the catalogue. Null when
+    /// the category name matched nothing — the name is still kept, because a name we cannot resolve is
+    /// better information for the user than no category at all.
+    /// </summary>
+    public Guid? CategoryId { get; private set; }
+
     public string? ReceiptNumber { get; private set; }
 
     public decimal? TaxAmount { get; private set; }
+
+    /// <summary>Predefined taxes matched against the company's catalogue. Empty when none matched.</summary>
+    public IReadOnlyList<Guid> TaxIds => _taxIds;
+
+    /// <summary>Where the receipt was issued, as printed. Carried through to the expense record.</summary>
+    public string? Location { get; private set; }
 
     /// <summary>The external system's expense id. Its presence is what makes a re-submit a no-op.</summary>
     public string? ExternalExpenseId { get; private set; }
@@ -273,9 +287,24 @@ public sealed class Receipt
         Currency = fields.Currency?.ToUpperInvariant();
         Amount = fields.Amount is { } amount ? decimal.Round(amount, 2, MidpointRounding.ToEven) : null;
         Category = fields.Category;
+        CategoryId = fields.CategoryId;
         ReceiptNumber = fields.ReceiptNumber;
         TaxAmount = fields.TaxAmount is { } tax ? decimal.Round(tax, 2, MidpointRounding.ToEven) : null;
+        Location = fields.Location;
+
+        _taxIds.Clear();
+
+        if (fields.TaxIds is { Count: > 0 })
+        {
+            _taxIds.AddRange(fields.TaxIds.Distinct());
+        }
     }
+
+    /// <summary>
+    /// Re-attaches a catalogue identifier to a category name that was edited by hand. Passing null is
+    /// how a name that matched nothing is recorded — it must never keep the previous category's id.
+    /// </summary>
+    public void ResolveCategory(Guid? categoryId) => CategoryId = categoryId;
 
     private void Apply(ReceiptFieldChange change)
     {
@@ -307,6 +336,15 @@ public sealed class Receipt
 
             case ReceiptField.Category:
                 Category = RequireString(change, ReceiptField.Category);
+
+                // The new name has not been checked against the catalogue yet, and keeping the old id
+                // would leave a receipt whose name and id name two different categories. The caller
+                // re-resolves through ResolveCategory.
+                CategoryId = null;
+                break;
+
+            case ReceiptField.Location:
+                Location = RequireString(change, ReceiptField.Location);
                 break;
 
             case ReceiptField.ReceiptNumber:

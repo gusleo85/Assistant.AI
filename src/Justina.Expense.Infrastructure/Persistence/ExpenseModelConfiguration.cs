@@ -29,8 +29,17 @@ public sealed class ExpenseModelConfiguration : IModelConfiguration
             entity.Property(e => e.Currency).HasColumnType("char(3)");
             entity.Property(e => e.Amount).HasColumnType("decimal(18,2)");
             entity.Property(e => e.Category).HasMaxLength(64);
+            entity.Property(e => e.CategoryId);
             entity.Property(e => e.ReceiptNumber).HasMaxLength(64);
             entity.Property(e => e.TaxAmount).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.Location).HasMaxLength(256);
+
+            // A primitive collection, stored as a JSON array in one column. Tax ids are only ever read
+            // and written with the receipt itself — nothing queries or joins on them — so a child table
+            // would add a join and a migration surface for no gain.
+            entity.PrimitiveCollection<IReadOnlyList<Guid>>("TaxIds")
+                .HasColumnName("TaxIds")
+                .UsePropertyAccessMode(PropertyAccessMode.Field);
             entity.Property(e => e.ExternalExpenseId).HasMaxLength(128);
             entity.Property(e => e.FailureReason).HasMaxLength(256);
             entity.Property(e => e.CreatedAtUtc).HasColumnType("datetime2");

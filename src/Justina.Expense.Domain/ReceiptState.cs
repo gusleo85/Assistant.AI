@@ -26,6 +26,7 @@ public enum ReceiptField
     Category = 4,
     ReceiptNumber = 5,
     TaxAmount = 6,
+    Location = 7,
 }
 
 /// <summary>
@@ -44,6 +45,11 @@ public sealed record ReceiptFieldChange
 }
 
 /// <summary>The set of values Vision extracts, after C# validation and normalization.</summary>
+/// <summary>
+/// <paramref name="CategoryId"/> and <paramref name="TaxIds"/> are resolved in C# against the company's
+/// catalogue before they reach the domain — a model answers with names, never with identifiers. They
+/// default to null so every existing caller keeps compiling unchanged.
+/// </summary>
 public sealed record ReceiptFields(
     string? Merchant,
     DateOnly? Date,
@@ -51,4 +57,7 @@ public sealed record ReceiptFields(
     decimal? Amount,
     string? Category,
     string? ReceiptNumber,
-    decimal? TaxAmount);
+    decimal? TaxAmount,
+    Guid? CategoryId = null,
+    IReadOnlyList<Guid>? TaxIds = null,
+    string? Location = null);

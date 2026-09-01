@@ -49,7 +49,7 @@ public static class ReceiptExtractionSchema
                 "additionalProperties": false,
                 "required": [
                   "merchant", "date", "currency", "amount",
-                  "category", "receiptNumber", "taxAmount", "lineItems"
+                  "category", "receiptNumber", "taxAmount", "taxes", "lineItems"
                 ],
                 "properties": {
                   "merchant":      { "type": ["string", "null"] },
@@ -59,6 +59,7 @@ public static class ReceiptExtractionSchema
                   "category":      { "type": ["string", "null"] },
                   "receiptNumber": { "type": ["string", "null"] },
                   "taxAmount":     { "type": ["string", "null"] },
+                  "taxes":         { "type": "array", "items": { "type": "string" } },
                   "lineItems": {
                     "type": "array",
                     "items": {
@@ -84,6 +85,11 @@ public static class ReceiptExtractionSchema
 /// <summary>Raw, still-untrusted Vision output. Nothing here reaches the domain before normalization.</summary>
 public sealed record RawReceiptLineItem(string? Description, string? Quantity, string? UnitPrice, string? Amount);
 
+/// <summary>
+/// <paramref name="TaxAmount"/> is the tax figure printed on the receipt; <paramref name="Taxes"/> are
+/// the predefined tax labels the model matched against the company's catalogue. They answer different
+/// questions — how much, and which tax — so both are kept.
+/// </summary>
 public sealed record RawReceipt(
     string? Merchant,
     string? Date,
@@ -92,6 +98,7 @@ public sealed record RawReceipt(
     string? Category,
     string? ReceiptNumber,
     string? TaxAmount,
-    IReadOnlyList<RawReceiptLineItem>? LineItems);
+    IReadOnlyList<RawReceiptLineItem>? LineItems,
+    IReadOnlyList<string>? Taxes = null);
 
 public sealed record RawExtraction(IReadOnlyList<RawReceipt>? Receipts);

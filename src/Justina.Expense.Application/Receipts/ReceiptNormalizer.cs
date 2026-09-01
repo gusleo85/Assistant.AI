@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Justina.Expense.Application.Abstractions;
 using Justina.Expense.Domain;
 
 namespace Justina.Expense.Application.Receipts;
@@ -22,18 +23,37 @@ public static class ReceiptNormalizer
         "MMM d, yyyy", "MMMM d, yyyy", "MMM dd yyyy", "MMMM dd yyyy", "yyyyMMdd",
     ];
 
-    public static NormalizedReceipt Normalize(RawReceipt raw)
+    public static NormalizedReceipt Normalize(RawReceipt raw) => Normalize(raw, null);
+
+    /// <summary>
+    /// Resolves the category name and tax labels the model answered with against the company's catalogue.
+    /// The model only ever supplies names; identifiers are looked up here, so an id can never be
+    /// something a model made up. A name that matches nothing keeps its text and gets no id.
+    /// </summary>
+    public static NormalizedReceipt Normalize(RawReceipt raw, ExpenseCatalogue? catalogue)
     {
         ArgumentNullException.ThrowIfNull(raw);
+
+        var category = Text(raw.Category);
+        var categoryId = catalogue?.FindCategory(category)?.Id;
+
+        var taxIds = (raw.Taxes ?? [])
+            .Select(label => catalogue?.FindTax(Text(label))?.Id)
+            .Where(id => id is not null)
+            .Select(id => id!.Value)
+            .Distinct()
+            .ToList();
 
         var fields = new ReceiptFields(
             Merchant: Text(raw.Merchant),
             Date: Date(raw.Date),
             Currency: Currency(raw.Currency),
             Amount: PositiveAmount(raw.Amount),
-            Category: Text(raw.Category),
+            Category: category,
             ReceiptNumber: Text(raw.ReceiptNumber),
-            TaxAmount: NonNegativeAmount(raw.TaxAmount));
+            TaxAmount: NonNegativeAmount(raw.TaxAmount),
+            CategoryId: categoryId,
+            TaxIds: taxIds);
 
         var lineItems = (raw.LineItems ?? [])
             .Select(LineItem)

@@ -20,7 +20,14 @@ public sealed record ExpenseSubmission(
     IReadOnlyList<ExpenseLineItem> LineItems,
     string SubmittedByUserId,
     string IdempotencyKey,
-    CorrelationId CorrelationId);
+    CorrelationId CorrelationId,
+    Guid? CategoryId = null,
+    IReadOnlyList<Guid>? TaxIds = null,
+    string? Location = null)
+{
+    /// <summary>The catalogue taxes matched on this receipt. Never null, so callers need no guard.</summary>
+    public IReadOnlyList<Guid> TaxIds { get; init; } = TaxIds ?? [];
+}
 
 public sealed record ExpenseSubmissionResult(string ExternalExpenseId);
 

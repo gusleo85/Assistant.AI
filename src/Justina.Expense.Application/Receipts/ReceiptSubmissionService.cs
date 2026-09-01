@@ -111,7 +111,10 @@ public sealed class ReceiptSubmissionService(
                 .ToList(),
             submittedByUserId,
             BuildIdempotencyKey(receipt),
-            correlationId);
+            correlationId,
+            receipt.CategoryId,
+            receipt.TaxIds,
+            receipt.Location);
 
     /// <summary>
     /// Deterministic from the receipt identity and its confirmed content, so a retry of the same

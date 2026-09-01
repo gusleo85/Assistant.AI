@@ -361,11 +361,52 @@ those are `[~]`, not `[x]`.
 
 ---
 
+## Phase 19 — Expense catalogue, prompt injection and submission
+
+Plan: `plan/expense-catalogue-and-submission.md`. Contract sources: `C:\git\ReceiptScannerLambda`
+(how the Lambda constrains extraction) and `C:\git\expense-api` (what the API actually accepts).
+
+### Contract discovery
+- [x] Lambda flow mapped: S3 key is the receipt GUID, categories/taxes fetched per company, injected
+      into the prompt as `{0}`/`{1}`, model answers with names, C# maps names back to ids
+- [x] `expense-api` mapped: routes, DTOs, JSON policy, auth claims, bucket configuration
+- [x] Confirmed a **system token suffices** for categories and taxes (`?companyGuid=`, or the
+      `/list/{organizationId}` routes) — no company-token chain needed
+- [x] Confirmed member → organization is **one-to-one** (`Member.Id` is the `UserGUID`, single FK)
+- [x] Confirmed `POST /Receipt/scan` uploads to the receipt bucket itself and so **always triggers the
+      scanner lambda**, and that `Receipt/update` rejects any attachment already `ScanComplete` —
+      two extractors cannot both write, so Justina must not use that path
+
+### Built (Stub mode)
+- [x] `IExpenseCatalogue`, `ExpenseCategory`, `ExpenseTax`, `ExpenseTenant`, `IExpenseTenantResolver`
+- [x] `ReceiptExtractionPrompt.Compose` — catalogue folded into the instruction, sanitized and capped;
+      an empty catalogue returns the base instruction byte-identical
+- [x] `taxes` added to the Vision schema alongside `taxAmount`; `RawReceipt.Taxes`
+- [x] `ReceiptNormalizer.Normalize(raw, catalogue)` — names to ids, unmatched names keep their text
+- [x] `Receipt.CategoryId`, `TaxIds`, `Location`; a category edit clears the stale id
+- [x] Migration `20260901074432_AddReceiptCategoryIdTaxIdsAndLocation` (additive columns only)
+- [x] `ExpenseApi:Mode` flag; stub catalogue, tenant resolver and submission client
+- [x] Stub mode refuses to start under `ASPNETCORE_ENVIRONMENT=Production`
+- [x] 18 new tests: prompt composition, injection inside a category name, caps, name/label resolution
+- [x] Verified: build 0 warnings, 181 tests pass, container healthy, migration applied at startup,
+      tool API still 401s without a key
+- [ ] A receipt driven end to end through Stub mode — **needs channel media; not yet exercised**
+
+### Live mode — not started, blocked
+- [ ] Copy `JustLogin.Identity.SDK` source (net10 csproj only), `nuget.config` with a placeholder feed
+- [ ] Verify the five JustLogin packages restore and run on net10 — **needs the feed credential**
+- [ ] Live catalogue client + per-organization cache
+- [ ] Live tenant resolver (WhatsApp phone; Telegram link step)
+- [ ] Switch submission to `POST /expense/v1/Expenses` + `POST /Expenses/{id}/receipt/upload`
+      rather than the Lambda's scan/update path — **decision pending**
+
 ## Open blockers
 
 | ID | Blocker | Owner | Blocks |
 |---|---|---|---|
-| R1 | Expense API contract, base URL, auth, error format, credentials | Product Owner | Real submission; acceptance criteria 3–8, 13 |
+| R1 | Expense API contract — **the contract itself is now known** from `C:\git\expense-api` (routes, DTOs, claims, JSON policy). What remains is the environment base URL, Justina's own `IdentitySDK` client credential, and the MyGet feed credential | Product Owner | Live submission; acceptance criteria 3–8, 13 |
+| R12 | **No phone/email → member lookup exists in `expense-api`.** Nothing there maps a WhatsApp number or an email to a member, and a Telegram id needs a link step Justina must store itself | Product Owner | Live tenant resolution; multi-user use of any channel |
+| R13 | **Choice of submission path.** `POST /Receipt/scan` always triggers the scanner lambda and its update then blocks ours; `POST /Expenses` + `/Expenses/{id}/receipt/upload` avoids both. Needs a decision before Live work starts | Product Owner | Live submission |
 | R2 | Recruitment API contract | Product Owner | Recruitment phase 2 |
 | R3 | OpenClaw custom-tool registration mechanism | Spike | First live run of the agent layer |
 | — | A machine that can run the full Docker stack and live channels | Environment | All end-to-end verification |

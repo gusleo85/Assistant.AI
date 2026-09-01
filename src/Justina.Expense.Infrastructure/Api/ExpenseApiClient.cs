@@ -10,9 +10,40 @@ using Microsoft.Extensions.Options;
 
 namespace Justina.Expense.Infrastructure.Api;
 
+/// <summary>
+/// Whether the Expense integration talks to JustLogin or to local stand-ins.
+/// </summary>
+public enum ExpenseApiMode
+{
+    /// <summary>
+    /// Catalogue, submission and tenant resolution are all local stand-ins. Nothing leaves the process
+    /// and no JustLogin credential is required. The default, because the live contracts are still open.
+    /// </summary>
+    Stub = 0,
+
+    /// <summary>The real Expense API.</summary>
+    Live = 1,
+}
+
 public sealed class ExpenseApiOptions
 {
     public const string SectionName = "ExpenseApi";
+
+    /// <summary>Key within <see cref="SectionName"/> selecting stub or live implementations.</summary>
+    public const string ModeKey = "Mode";
+
+    /// <summary>
+    /// Defaults to <see cref="ExpenseApiMode.Stub"/> so a missing configuration can never accidentally
+    /// point a half-configured build at the real expense system.
+    /// </summary>
+    public ExpenseApiMode Mode { get; set; } = ExpenseApiMode.Stub;
+
+    /// <summary>The organization every conversation resolves to under <see cref="ExpenseApiMode.Stub"/>.</summary>
+    public Guid StubOrganizationId { get; set; } = Guid.Parse("33333333-0000-4000-8000-000000000001");
+
+    public string StubCompanyId { get; set; } = "STUB-COMPANY";
+
+    public Guid StubMemberId { get; set; } = Guid.Parse("44444444-0000-4000-8000-000000000001");
 
     public string BaseUrl { get; set; } = string.Empty;
 
@@ -159,6 +190,13 @@ public sealed class ExpenseApiClient(
             });
         }
 
+        var taxIds = new JsonArray();
+
+        foreach (var taxId in submission.TaxIds)
+        {
+            taxIds.Add(taxId);
+        }
+
         return new JsonObject
         {
             ["merchant"] = submission.Merchant,
@@ -166,8 +204,11 @@ public sealed class ExpenseApiClient(
             ["currency"] = submission.Currency,
             ["amount"] = submission.Amount,
             ["category"] = submission.Category,
+            ["categoryId"] = submission.CategoryId,
             ["receiptNumber"] = submission.ReceiptNumber,
             ["taxAmount"] = submission.TaxAmount,
+            ["taxIds"] = taxIds,
+            ["location"] = submission.Location,
             ["submittedBy"] = submission.SubmittedByUserId,
             ["lineItems"] = lineItems,
         };
