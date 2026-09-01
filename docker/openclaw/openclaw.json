@@ -62,9 +62,10 @@
     },
   },
 
-  // "coding" implicitly allows bundle-mcp, which is what makes the Justina tools available.
+  // "messaging" implicitly allows bundle-mcp (the Justina tools) without turning on Code Mode, which
+  // the reasoning model does not support and which the gateway warns degrades performance.
   tools: {
-    profile: "coding",
+    profile: "messaging",
   },
 
   agents: {
