@@ -2,7 +2,9 @@ using System.Collections.Concurrent;
 using System.Net;
 using Justina.Core.Domain.Results;
 using Justina.Expense.Application.Abstractions;
+using JustLogin.Identity.SDK.Helpers;
 using JustLogin.Identity.SDK.Interfaces;
+using JustLogin.Identity.SDK.Responses;
 using Microsoft.Extensions.Logging;
 
 namespace Justina.Expense.Infrastructure.Api;
@@ -98,6 +100,8 @@ public sealed class JustLoginAccessTokenProvider(
                 _tokens[companyGuid] = new CachedToken(token.AccessToken, expiry);
             }
 
+            Describe(token, companyId.Value, expiresAt);
+
             return Result.Success(token.AccessToken);
         }
         catch (OperationCanceledException)
@@ -119,6 +123,46 @@ public sealed class JustLoginAccessTokenProvider(
                 ErrorCodes.ExternalApiFailed,
                 "I could not sign in to the expense system just now.");
         }
+    }
+
+    /// <summary>
+    /// Says what arrived, without ever writing the token itself.
+    ///
+    /// It exists for one failure that is otherwise invisible: send the wrong field name — the GUID
+    /// instead of the CompanyID, or <c>CompanyId</c> where the server wants <c>CompanyID</c> — and the
+    /// identity server issues a perfectly valid token with no company claims on it. Nothing fails until
+    /// the Expense API refuses the call, by which point the cause is three services away. The claim
+    /// names are the evidence, so they are logged and the credential is not.
+    /// </summary>
+    private void Describe(GetAuthenticationResponse token, string companyId, DateTimeOffset? expiresAt)
+    {
+        string? company = null;
+
+        try
+        {
+            company = token.GetJustLoginToken()?.CompanyGUID;
+        }
+        catch (Exception exception)
+        {
+            // Reading claims is diagnostics; a token we cannot parse is still a token the API may accept.
+            logger.LogDebug(exception, "Could not read the claims of the company token");
+        }
+
+        if (string.IsNullOrWhiteSpace(company))
+        {
+            logger.LogWarning(
+                "Identity issued a token for CompanyID {CompanyId} with no CompanyGUID claim. It will be " +
+                "sent, but the Expense API is likely to refuse it — check the CompanyID and its spelling",
+                companyId);
+
+            return;
+        }
+
+        logger.LogInformation(
+            "Company token for CompanyID {CompanyId} carries CompanyGUID {CompanyGuid}, valid until {Expiry}",
+            companyId,
+            company,
+            expiresAt);
     }
 
     private sealed record CachedToken(string Value, DateTimeOffset ExpiresAt)

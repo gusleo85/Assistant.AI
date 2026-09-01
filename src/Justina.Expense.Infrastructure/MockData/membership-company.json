@@ -1,13 +1,27 @@
 {
   "_comment": [
     "Stands in for GET membership/v2/companies/{companyGuid} on the JustLogin membership API.",
+    "Captured verbatim from the dev environment, so Stub and Live answer identically for this company.",
     "It exists for one value: companyId. The identity server's token request takes CompanyID, not the",
     "company GUID, and that mapping is the only thing the membership call is for.",
-    "companyGuid is the real dev company (khinco), so replacing this file with the live call is a",
-    "configuration change and nothing else. Fill companyId from the real endpoint:",
-    "  curl https://apis.justlogindevelopment.xyz/membership/v2/companies/1BA47EAC7AE74270A3B8A935F30C53EE -H 'Authorization: Bearer <system token>'"
+    "Note status: -3 — whatever that means, it is what dev returns for this company today."
   ],
   "companyGuid": "1BA47EAC7AE74270A3B8A935F30C53EE",
-  "companyId": "",
-  "companyName": "khinco"
+  "companyId": "khinco",
+  "name": "Khin Co.,Ltd",
+  "companyName": "Khin Co.,Ltd",
+  "employeeSize": 9,
+  "telephone": "+959402667628",
+  "countryCode": "MM",
+  "status": -3,
+  "portal": "justlogin",
+  "address1": "20 Kallang Avenue",
+  "address2": "Pico Creative Center",
+  "city": "Singapore",
+  "state": "Singapore",
+  "country": "Singapore",
+  "postalCode": "555777",
+  "createDate": "2019-12-03T10:44:02.76",
+  "enable2Fa": false,
+  "isSelfServiceCompany": false
 }
