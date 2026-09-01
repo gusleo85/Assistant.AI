@@ -99,7 +99,7 @@ services:
       - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
     networks: [justina-network]
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost/nginx-health || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/nginx-health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
