@@ -75,6 +75,13 @@ public static class ExpenseInfrastructureServiceCollectionExtensions
             stubbed.Add(nameof(options.SubmissionMode));
         }
 
+        // Mock is not a safer Stub: it accepts every submission and files nothing. In Production
+        // it would tell people their expenses were submitted when nothing had happened.
+        if (options.ResolvedSubmissionMode == ExpenseApiMode.Mock)
+        {
+            stubbed.Add(nameof(options.SubmissionMode) + " (Mock)");
+        }
+
         if (isProduction && stubbed.Count > 0)
         {
             throw new InvalidOperationException(
@@ -144,6 +151,18 @@ public static class ExpenseInfrastructureServiceCollectionExtensions
         if (options.ResolvedSubmissionMode == ExpenseApiMode.Stub)
         {
             services.AddScoped<IExpenseApiClient, StubExpenseApiClient>();
+            return;
+        }
+
+        // Mock speaks the chat-scan contract over real HTTP to a stand-in endpoint, so the payload is
+        // genuinely built, authenticated, sent and parsed — only the far end is fake.
+        if (options.ResolvedSubmissionMode == ExpenseApiMode.Mock)
+        {
+            services
+                .AddHttpClient<IExpenseApiClient, ChatScanExpenseApiClient>((provider, client) =>
+                    Configure(client, provider.GetRequiredService<IOptions<ExpenseApiOptions>>().Value))
+                .AddStandardResilienceHandler();
+
             return;
         }
 

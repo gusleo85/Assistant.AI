@@ -1,4 +1,5 @@
 using Justina.Api.Hosting;
+using Justina.Api.Mock;
 using Justina.Api.Security;
 using Justina.Api.Tools;
 using ModelContextProtocol.Server;
@@ -89,6 +90,16 @@ app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => fa
 app.MapHealthChecks("/health/ready");
 app.MapToolEndpoints();
 app.MapMcp("/mcp");
+
+// A stand-in for the Expense endpoint that does not exist yet. Only mounted when the submission seam is
+// in Mock; startup already refuses Mock in Production, so this cannot appear there.
+if (string.Equals(builder.Configuration["ExpenseApi:Mode"], "Mock", StringComparison.OrdinalIgnoreCase)
+    || string.Equals(builder.Configuration["ExpenseApi:SubmissionMode"], "Mock", StringComparison.OrdinalIgnoreCase))
+{
+    app.MapMockExpenseApi();
+    app.Logger.LogWarning(
+        "MOCK Expense API mounted at /mock/expense/v1. Submissions are accepted and discarded.");
+}
 
 await MigrateDatabaseAsync(app).ConfigureAwait(false);
 

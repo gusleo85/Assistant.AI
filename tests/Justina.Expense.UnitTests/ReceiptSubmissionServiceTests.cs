@@ -1,4 +1,7 @@
 using Justina.Core.Application.Abstractions;
+using Justina.Core.Application.Messaging;
+using Justina.Core.Domain.Identity;
+using Justina.Core.Domain.Messaging;
 using Justina.Core.Domain.Observability;
 using Justina.Core.Domain.Results;
 using Justina.Expense.Application.Abstractions;
@@ -17,15 +20,27 @@ public class ReceiptSubmissionServiceTests
     private readonly IExpenseApiClient _api = Substitute.For<IExpenseApiClient>();
     private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
     private readonly IClock _clock = Substitute.For<IClock>();
+    private readonly IExpenseTenantResolver _tenants = Substitute.For<IExpenseTenantResolver>();
+
+    private static readonly ExpenseTenant Tenant = new(Guid.NewGuid(), "COMPANY-1", Guid.NewGuid());
 
     public ReceiptSubmissionServiceTests()
     {
         _clock.UtcNow.Returns(Now);
         _unitOfWork.SaveChangesAsync(Arg.Any<CancellationToken>()).Returns(Result.Success());
+        _tenants.ResolveAsync(Arg.Any<RequestContext>(), Arg.Any<CancellationToken>())
+            .Returns(Result.Success(Tenant));
     }
 
     private ReceiptSubmissionService CreateService() =>
-        new(_api, _unitOfWork, _clock, NullLogger<ReceiptSubmissionService>.Instance);
+        new(_api, _tenants, _unitOfWork, _clock, NullLogger<ReceiptSubmissionService>.Instance);
+
+    private static RequestContext Context() =>
+        new(
+            new UserContext(Guid.NewGuid(), ChannelKind.Telegram, "user-1", "Test User", [Capabilities.ExpenseSubmit]),
+            ChannelKind.Telegram,
+            "conversation-1",
+            CorrelationId.New());
 
     private static Receipt ConfirmedReceipt()
     {
@@ -47,7 +62,7 @@ public class ReceiptSubmissionServiceTests
 
         var receipt = ConfirmedReceipt();
 
-        var result = await CreateService().SubmitAsync(receipt, "user-1", CorrelationId.New(), default);
+        var result = await CreateService().SubmitAsync(receipt, Context(), default);
 
         result.IsSuccess.ShouldBeTrue();
         receipt.State.ShouldBe(ReceiptState.Submitted);
@@ -67,8 +82,8 @@ public class ReceiptSubmissionServiceTests
         var receipt = ConfirmedReceipt();
         var service = CreateService();
 
-        await service.SubmitAsync(receipt, "user-1", CorrelationId.New(), default);
-        var second = await service.SubmitAsync(receipt, "user-1", CorrelationId.New(), default);
+        await service.SubmitAsync(receipt, Context(), default);
+        var second = await service.SubmitAsync(receipt, Context(), default);
 
         second.IsSuccess.ShouldBeTrue();
         second.Value.ExternalExpenseId.ShouldBe("EXP-1");
@@ -83,7 +98,7 @@ public class ReceiptSubmissionServiceTests
 
         var receipt = ConfirmedReceipt();
 
-        var result = await CreateService().SubmitAsync(receipt, "user-1", CorrelationId.New(), default);
+        var result = await CreateService().SubmitAsync(receipt, Context(), default);
 
         result.IsFailure.ShouldBeTrue();
         receipt.State.ShouldBe(ReceiptState.SubmissionFailed);
@@ -101,7 +116,7 @@ public class ReceiptSubmissionServiceTests
             Now);
         receipt.Confirm("user-1", Now);
 
-        var result = await CreateService().SubmitAsync(receipt, "user-1", CorrelationId.New(), default);
+        var result = await CreateService().SubmitAsync(receipt, Context(), default);
 
         result.IsFailure.ShouldBeTrue();
         result.Error.Code.ShouldBe(ErrorCodes.Validation);
@@ -117,15 +132,55 @@ public class ReceiptSubmissionServiceTests
             .Returns(Result.Success(new ExpenseSubmissionResult("EXP-1")));
 
         var receipt = ConfirmedReceipt();
-        var correlation = CorrelationId.New();
+        var context = Context();
 
-        await CreateService().SubmitAsync(receipt, "user-1", correlation, default);
+        await CreateService().SubmitAsync(receipt, context, default);
 
         captured.ShouldNotBeNull();
         captured.IdempotencyKey.ShouldNotBeNullOrWhiteSpace();
-        captured.CorrelationId.ShouldBe(correlation);
+        captured.CorrelationId.ShouldBe(context.CorrelationId);
         captured.Merchant.ShouldBe("Starbucks");
         captured.Amount.ShouldBe(12.50m);
+    }
+
+    /// <summary>
+    /// The expense has to be filed against a company and a member. Both come from the channel identity,
+    /// never from anything the caller states.
+    /// </summary>
+    [Fact]
+    public async Task The_submission_carries_the_resolved_tenant()
+    {
+        ExpenseSubmission? captured = null;
+
+        _api.SubmitAsync(Arg.Do<ExpenseSubmission>(s => captured = s), Arg.Any<CancellationToken>())
+            .Returns(Result.Success(new ExpenseSubmissionResult("EXP-1")));
+
+        await CreateService().SubmitAsync(ConfirmedReceipt(), Context(), default);
+
+        captured.ShouldNotBeNull();
+        captured.Tenant.ShouldNotBeNull();
+        captured.Tenant.OrganizationId.ShouldBe(Tenant.OrganizationId);
+        captured.Tenant.MemberId.ShouldBe(Tenant.MemberId);
+        captured.Tenant.CompanyId.ShouldBe("COMPANY-1");
+    }
+
+    /// <summary>
+    /// Resolved before the state moves, so an unresolvable tenant leaves the receipt confirmed and
+    /// retryable rather than stranded in SUBMITTING.
+    /// </summary>
+    [Fact]
+    public async Task An_unresolvable_tenant_refuses_before_the_receipt_leaves_Confirmed()
+    {
+        _tenants.ResolveAsync(Arg.Any<RequestContext>(), Arg.Any<CancellationToken>())
+            .Returns(Result.Failure<ExpenseTenant>(ErrorCodes.NotFound, "no member"));
+
+        var receipt = ConfirmedReceipt();
+
+        var result = await CreateService().SubmitAsync(receipt, Context(), default);
+
+        result.IsFailure.ShouldBeTrue();
+        receipt.State.ShouldBe(ReceiptState.Confirmed);
+        await _api.DidNotReceiveWithAnyArgs().SubmitAsync(default!, default);
     }
 
     [Fact]

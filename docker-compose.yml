@@ -51,6 +51,13 @@ services:
       # Stub serves the catalogue, tenant and submission seams from mock data; Live calls the Expense
       # API. Per-seam overrides (ExpenseApi__CatalogueMode and friends) are read too — see .env.example.
       ExpenseApi__Mode: ${EXPENSE_API_MODE:-Stub}
+      # Per-seam overrides. Tenant stays Stub in Mock mode: resolving a Telegram id to a member is
+      # Justina's own mapping, and the channel-link fixture is what holds it.
+      ExpenseApi__CatalogueMode: ${EXPENSE_API_CATALOGUE_MODE:-}
+      ExpenseApi__TenantMode: ${EXPENSE_API_TENANT_MODE:-}
+      ExpenseApi__SubmissionMode: ${EXPENSE_API_SUBMISSION_MODE:-}
+      # Mock: the payload is really built, authenticated, sent and parsed — against the stand-in endpoint
+      # this same service hosts at /mock/expense/v1. Nothing reaches the real Expense system.
       ExpenseApi__BaseUrl: ${EXPENSE_API_URL:-}
       ExpenseApi__ApiKey: ${EXPENSE_API_KEY:-}
       ExpenseApi__ConfiguredOrganizationId: ${EXPENSE_ORGANIZATION_ID:-}
