@@ -7,17 +7,17 @@ Related: [api-testing.md](api-testing.md) for the authentication and authorizati
 [pdf-testing.md](pdf-testing.md) for document handling in general,
 [test-environment.md](test-environment.md) for setup.
 
-## Precondition: blocker B1
+## Precondition: what has and has not been run
 
-`Directory.Build.props` sets `<InvariantGlobalization>true</InvariantGlobalization>`.
-`Microsoft.Data.SqlClient` refuses to open a connection in that mode and throws
-`System.NotSupportedException: Globalization Invariant Mode is not supported.` from
-`SqlConnection.TryOpen`. `justina-app` exits at startup because the migration step throws
-(`Program.cs` line 87). Causation was confirmed by flipping only that flag in a copy of the build output:
-the same binaries then made a real TCP attempt and failed with an ordinary `SqlException`.
+Cases marked **runs today** need no database and were executed during the QA pass — their stated results
+were actually observed. Every other case needs a running stack with SQL Server and has **never been
+executed by anyone**. Treat those as unproven, not as expected passes.
 
-Cases below that need a running stack are blocked until B1 is fixed. Cases marked **runs today** do not
-touch the database and can be executed now.
+A blocker that previously made the database path impossible — `InvariantGlobalization=true`, which made
+`Microsoft.Data.SqlClient` throw `System.NotSupportedException: Globalization Invariant Mode is not
+supported.` from `SqlConnection.TryOpen` and killed `justina-app` at startup — has been fixed and
+re-verified. See [test-environment.md](test-environment.md). Nothing now prevents you from running the
+rest of this document; it simply has not been done.
 
 ## Known findings
 
@@ -26,11 +26,11 @@ asked to close.
 
 | Id | Finding | Severity |
 |---|---|---|
-| B1 | Invariant globalization breaks every SQL Server connection; the app cannot start | Blocker |
+| B1 | Invariant globalization broke every SQL Server connection — **fixed and re-verified during the QA pass**; do not let it regress | Closed |
 | B2 | `/health/live` includes the database check | Medium |
 | B5 | A receipt can be read, edited, confirmed or cancelled from another conversation | High |
-| S1 | No log redactor exists | Medium |
-| S2 | Telegram bot token sits in the request path; HTTP client tracing is enabled — exposure unverified | Medium |
+| S1 | A `SecretScrubber` now exists and is wired into tracing, but `IsSensitiveHeader` is called from nowhere and nothing is wired into Serilog | Low |
+| S2 | Telegram bot token sits in the request path; trace URLs are now scrubbed, but the runtime effect is still unverified | Low |
 | S3 | WhatsApp `X-Hub-Signature-256` verification is not implemented in this repository | Medium |
 | S4 | No exception-handling middleware; Development leaks stack traces | Low to medium |
 | S5 | No CI pipeline and no automated dependency scan | Low |
@@ -58,6 +58,48 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST "$BASE/tools/session.context" \
 **Fail:** anything that reveals whether the route exists, or any 200.
 
 Repeat with a wrong key. Same result: `401`.
+
+### SEC-01b — A receipt belonging to someone else (finding B5) **(needs a database)**
+
+Holding a capability answers "may this principal submit expenses at all". It does not answer "may this
+principal touch *this* receipt". Nothing in the current code asks the second question.
+
+`ReceiptResolver.ResolveAsync` returns an explicitly supplied `receiptId` without checking it:
+
+```csharp
+if (explicitReceiptId is { } id)
+{
+    return Result.Success(id);
+}
+```
+
+and the update, confirm, cancel and get-receipt handlers each load by that id and check only the
+receipt's *state*. No handler compares the loaded `Receipt.ConversationId` against the caller's
+conversation, even though the `IReceiptResolver` comment claims "the agent cannot act on a receipt
+belonging to another conversation".
+
+**Setup.** Two principals in `Principals`, both with `expense.submit`, on two different
+`conversationId` values. Put a receipt through extraction in conversation 1 and note its `receiptId`.
+
+**Steps.** From conversation 2, with the second user's envelope, call each of these passing conversation
+1's `receiptId` explicitly:
+
+```bash
+curl -s -X POST "$BASE/tools/expense.get_receipt" \
+  -H 'Content-Type: application/json' -H "X-Justina-Tool-Key: $JUSTINA_TOOL_SECRET" \
+  -d '{"envelope":{"channel":"telegram","userId":"user-two","conversationId":"conv-2"},
+       "receiptId":"<receipt from conversation 1>"}'
+```
+
+Repeat for `expense.edit_receipt`, `expense.confirm_receipt` and `expense.cancel_receipt`.
+
+**Pass:** every call is refused with `not_found`. Use `not_found` rather than `unauthorized` so an id
+cannot be probed for existence.
+**Fail:** any call returns the receipt's data, changes it, submits it, or cancels it.
+
+**This case is expected to fail today.** It has never been executed — it needs a database, which was never
+available during the QA pass. Run it first, and record the actual behaviour rather than assuming either
+outcome.
 
 ### SEC-02 — Fail closed when no secret is configured **(runs today)**
 
@@ -356,13 +398,21 @@ which passes.
 
 ## 5. Secret leakage
 
-### SEC-40 — Finding S1: there is no log redactor
+### SEC-40 — Finding S1: redaction exists but is only half wired
 
-The plan calls for a redactor that scrubs known secret keys and `Authorization` headers. `grep` for
-`redact` or `sanitize` across `src/` finds nothing. It does not exist.
+`src/Justina.Core.Infrastructure/Security/SecretScrubber.cs` now exists. `SecretScrubber.Redact`
+replaces a Telegram bot token in a URL path with `/bot***` and blanks the values of eight sensitive query
+keys. 21 unit tests cover it and pass.
+
+Two gaps remain, and this case is what closes them:
+
+- `SecretScrubber.IsSensitiveHeader` is defined and unit-tested but **called from nowhere**. A grep for
+  `Scrub` across `src/` finds a single call site, the OpenTelemetry URL enrichment in `Program.cs`.
+  Header redaction is declared, not applied.
+- Nothing is wired into the Serilog pipeline. There is no destructuring policy and no enricher.
 
 Every log statement was reviewed and none logs a token, key or `Authorization` header. Provider response
-bodies are truncated to 500 characters before logging. So the system is safe **by convention**, not by
+bodies are truncated to 500 characters before logging. So logs are safe **by convention**, not by
 mechanism — there is nothing preventing the next log statement from leaking one.
 
 Run this audit after every change that adds logging.
@@ -407,8 +457,18 @@ $"bot{_options.BotToken}/getFile?file_id={...}"
 $"file/bot{_options.BotToken}/{filePath.Value}"
 ```
 
-Query-string redaction would not help a path segment. Whether the token reaches exported span attributes
-was **not verified** — no collector was run. This case exists to close that gap.
+Query-string redaction would not help a path segment. The instrumentation now overwrites the recorded
+URL with a scrubbed one:
+
+```csharp
+options.EnrichWithHttpRequestMessage = (activity, request) =>
+    activity.SetTag("url.full", SecretScrubber.Redact(request.RequestUri));
+```
+
+That is covered by unit tests, but the **runtime effect has never been observed** — no collector was
+run. A tag set by an enricher can still be accompanied by other attributes carrying the raw URL, and the
+metrics pipeline uses `AddHttpClientInstrumentation()` with no enrichment at all. This case exists to
+close that gap; do not assume the scrubber works end to end because its unit tests pass.
 
 Steps:
 

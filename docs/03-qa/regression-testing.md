@@ -17,11 +17,11 @@ Baseline to compare against:
 | Project | Tests | Expected |
 |---|---|---|
 | `Justina.ArchitectureTests` | 20 | Passed |
-| `Justina.Core.UnitTests` | 17 | Passed |
+| `Justina.Core.UnitTests` | 38 | Passed |
 | `Justina.Expense.UnitTests` | 68 | Passed |
 | `Justina.IntegrationTests` | 10 | Passed |
 | `Justina.Recruitment.UnitTests` | 7 | Passed |
-| **Total** | **122** | **0 failed, 0 skipped** |
+| **Total** | **143** | **0 failed, 0 skipped** |
 
 The build must produce **0 warnings and 0 errors**. `Directory.Build.props` sets
 `TreatWarningsAsErrors`, so a warning is a build failure, not a nag.
@@ -202,7 +202,7 @@ as a transport failure and may retry it.
 |---|---|
 | Everything | These affect the whole application |
 | Manual: `docker compose up` end to end | Startup, migration, health |
-| Manual: both health endpoints | Blocker B1 and defect B2 both surface here |
+| Manual: both health endpoints | Defect B2 surfaces here: `/health/live` includes the database check |
 
 If `Directory.Build.props` changed, check the produced runtimeconfig:
 
@@ -213,7 +213,8 @@ cat src/Justina.Api/bin/Debug/net10.0/Justina.Api.runtimeconfig.json
 `System.Globalization.Invariant` must be `false` or absent. If it is `true`,
 `Microsoft.Data.SqlClient` refuses every connection with
 `System.NotSupportedException: Globalization Invariant Mode is not supported.` and the app dies at
-startup. That is blocker B1 in [`test-environment.md`](test-environment.md).
+startup. That was blocker B1, now fixed — do not let it regress. See
+[`test-environment.md`](test-environment.md).
 
 ### EF configuration or migrations
 

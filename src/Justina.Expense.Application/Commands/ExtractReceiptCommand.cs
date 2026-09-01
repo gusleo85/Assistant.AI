@@ -24,6 +24,7 @@ public sealed record ExtractReceiptCommand(RequestContext Context, Guid ReceiptI
 }
 
 public sealed class ExtractReceiptCommandHandler(
+    IReceiptAccess access,
     IReceiptRepository receipts,
     IMediaStore mediaStore,
     IDocumentProcessor documentProcessor,
@@ -39,12 +40,14 @@ public sealed class ExtractReceiptCommandHandler(
         ExtractReceiptCommand command,
         CancellationToken cancellationToken)
     {
-        var receipt = await receipts.GetAsync(command.ReceiptId, cancellationToken).ConfigureAwait(false);
+        var loaded = await access.GetAsync(command.Context, command.ReceiptId, cancellationToken).ConfigureAwait(false);
 
-        if (receipt is null)
+        if (loaded.IsFailure)
         {
-            return Result.Failure<ReceiptExtractionOutcome>(ErrorCodes.NotFound, "That receipt no longer exists.");
+            return Result.Failure<ReceiptExtractionOutcome>(loaded.Error);
         }
+
+        var receipt = loaded.Value;
 
         // ExtractionFailed is allowed so a Vision failure can be retried against the stored document
         // without asking the user to send it again.

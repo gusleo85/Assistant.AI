@@ -2,46 +2,40 @@
 
 How to get from a clean machine to something you can actually test.
 
-## Read this first — the database path is currently blocked
+## Read this first — a resolved blocker worth knowing about
 
-**Blocker B1.** `Directory.Build.props` sets:
+**Blocker B1, now fixed.** `Directory.Build.props` used to set:
 
 ```xml
 <InvariantGlobalization>true</InvariantGlobalization>
 ```
 
 That flag is baked into the published `Justina.Api.runtimeconfig.json` as
-`"System.Globalization.Invariant": true`. `Microsoft.Data.SqlClient` refuses to open **any** connection
-in that mode. It throws before it touches the network:
+`"System.Globalization.Invariant"`. `Microsoft.Data.SqlClient` refuses to open **any** connection in
+that mode. It threw before it touched the network:
 
 ```
 System.NotSupportedException: Globalization Invariant Mode is not supported.
    at Microsoft.Data.SqlClient.SqlConnection.TryOpen(TaskCompletionSource`1 retry, SqlConnectionOverrides overrides)
 ```
 
-This was confirmed by causation, not by guesswork: the same build output was copied, only
-`System.Globalization.Invariant` was flipped to `false` in the runtimeconfig, and the identical binaries
-then made a real TCP attempt and failed with an ordinary `SqlException` network error instead.
+`justina-app` exited at startup because `MigrateDatabaseAsync` (`src/Justina.Api/Program.cs`, line 87)
+threw, so `docker compose up` could not bring the stack up at all.
 
-What it means for you:
+The property is now `false`, with a comment recording why. The fix was re-verified: after a rebuild the
+runtimeconfig reads `"System.Globalization.Invariant": false`, the same startup scenario produces an
+ordinary `Microsoft.Data.SqlClient.SqlException` network error instead, and with the migration step
+skipped the host starts and listens.
 
-- `justina-app` **exits at startup**. `MigrateDatabaseAsync` (`src/Justina.Api/Program.cs`, line 87)
-  throws and the process dies before the web host runs.
-- `docker compose up` cannot bring the stack up. `justina-openclaw` waits on
-  `justina-app: service_healthy` and will never start either.
-- Every tool call that touches the database fails.
+**Why it is still in this document.** If you ever see `NotSupportedException: Globalization Invariant
+Mode is not supported`, this is what came back. Check `Directory.Build.props` first. Do not re-enable
+`InvariantGlobalization` to shave container size — it breaks SQL Server outright, and the runtime image
+(Debian-based `aspnet:10.0`) already carries ICU.
 
-Until this is fixed, no database-backed test can run. The whole of
-[`receipt-testing.md`](receipt-testing.md), [`telegram-testing.md`](telegram-testing.md) and
-[`whatsapp-testing.md`](whatsapp-testing.md) is out of reach.
-
-The fix is to remove the property from `Directory.Build.props` (or set it to `false`) and rebuild:
-
-```xml
-<InvariantGlobalization>false</InvariantGlobalization>
-```
-
-Everything below that does not need SQL Server still works today.
+**What has still never been done.** No SQL Server instance was available during the QA pass, so the
+migration has never actually been applied and no database-backed journey has been executed end to end.
+Everything in [`receipt-testing.md`](receipt-testing.md), [`telegram-testing.md`](telegram-testing.md)
+and [`whatsapp-testing.md`](whatsapp-testing.md) is unproven. You are the first person to run it.
 
 ## Prerequisites
 
@@ -136,7 +130,7 @@ dotnet build Justina.slnx
 for p in tests/*/; do dotnet test "$p" --nologo -v q; done
 ```
 
-Expected: 122 tests pass across 5 projects, 0 failed, 0 skipped. Build produces 0 warnings and
+Expected: 143 tests pass across 5 projects, 0 failed, 0 skipped. Build produces 0 warnings and
 0 errors — warnings are errors, so anything less than clean is a real problem.
 
 Dependency scan:

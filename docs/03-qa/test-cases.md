@@ -13,25 +13,23 @@ thing forever. Deeper procedure lives in the companion documents; this file is t
 | Channels | `TC-CHN-*` | [telegram-testing.md](telegram-testing.md), [whatsapp-testing.md](whatsapp-testing.md) |
 | Security | `TC-SEC-*` | [security-testing.md](security-testing.md) |
 
-## Before you start: blocker B1
+## Before you start: what has actually been run
 
-`Directory.Build.props` sets `<InvariantGlobalization>true</InvariantGlobalization>`. That flag is baked
-into `Justina.Api.runtimeconfig.json` as `System.Globalization.Invariant: true`, and
-`Microsoft.Data.SqlClient` refuses to open a connection under it:
+**Need a running stack with SQL Server, and have never been executed by anyone:** every `TC-RCP-*`,
+every `TC-CHN-*`, all of `TC-RTE-*`, and `TC-SEC-04`/`TC-SEC-05`.
 
-```
-System.NotSupportedException: Globalization Invariant Mode is not supported.
-   at Microsoft.Data.SqlClient.SqlConnection.TryOpen(...)
-```
+**Already executed during the QA pass:** the automated suite, `TC-DOC-01`..`TC-DOC-04`,
+`TC-SEC-01`..`TC-SEC-03`, and the `TC-API-*` cases that run against WireMock.
 
-The startup migration runs before the web host, so `justina-app` throws and exits. Nothing that touches
-SQL Server can be executed until this is fixed.
+A case that has never been executed is not a passing case. Do not carry an unexecuted case forward as
+though it were green.
 
-**Blocked by B1:** every `TC-RCP-*`, `TC-CHN-*`, all of `TC-RTE-*`, and `TC-SEC-04`/`TC-SEC-05`.
-**Not blocked by B1:** the automated suite, `TC-DOC-01`..`TC-DOC-04`, `TC-SEC-01`..`TC-SEC-03`, and the
-`TC-API-*` cases that run against WireMock.
-
-Re-run every blocked case once B1 is fixed. A case that has never been executed is not a passing case.
+A note on a resolved blocker, kept because it will bite again if it regresses: `Directory.Build.props`
+used to set `<InvariantGlobalization>true</InvariantGlobalization>`, which made
+`Microsoft.Data.SqlClient` refuse every connection with
+`System.NotSupportedException: Globalization Invariant Mode is not supported.` and killed `justina-app`
+during its startup migration. That is fixed and re-verified — the property is now `false`. If you ever
+see that exception, check `Directory.Build.props` first.
 
 ## Status legend
 
@@ -48,7 +46,7 @@ dotnet build Justina.slnx
 for p in tests/*/; do dotnet test "$p" --nologo -v q; done
 ```
 
-122 tests across five projects. They need no network, no Docker and no API keys.
+143 tests across five projects. They need no network, no Docker and no API keys.
 
 ## Shared conventions
 
@@ -142,7 +140,7 @@ NGINX cannot resolve the upstream names outside the compose network and reports
 
 ### TC-DOC-05 — Whole stack starts and every health check passes
 **Purpose:** plan acceptance criterion 1.
-**Status:** Manual. **Blocked by B1.**
+**Status:** Manual. **Needs a running stack with SQL Server.**
 **Precondition:** ~2 GB free RAM, x64 host, roughly 1.5 GB of image download.
 **Steps:**
 ```bash
@@ -155,7 +153,7 @@ healthy, so an unhealthy app leaves the AI layer down.
 
 ### TC-DOC-06 — Restart is clean and state survives
 **Purpose:** receipt state and idempotency keys must outlive a restart.
-**Status:** Manual. **Blocked by B1.**
+**Status:** Manual. **Needs a running stack with SQL Server.**
 **Steps:** create a receipt, then `docker compose restart justina-app`, then read it back with
 `justina.expense.get_receipt`.
 **Expected:** the same receipt, in the same state, with the same id. `docker compose down` followed by
@@ -164,7 +162,7 @@ Only `docker compose down -v` should lose it.
 
 ### TC-DOC-07 — Logs are structured JSON and carry correlation
 **Purpose:** plan §25.
-**Status:** Manual. **Blocked by B1.**
+**Status:** Manual. **Needs a running stack with SQL Server.**
 **Steps:** `docker compose logs justina-app | tail -20`
 **Expected:** one JSON object per line with `@t`, `@mt` and `SourceContext`. Command lines carry
 `CorrelationId`, `ConversationId`, `Channel` and `CommandType`. No token, key or `Authorization` value
@@ -184,7 +182,7 @@ public. Grep the repository for the URL afterwards: it must appear in no file.
 
 ## Agent routing — `TC-RTE-*`
 
-All of these are **Manual** and **Blocked by B1**, because routing depends on
+All of these are **Manual** and **Needs a running stack with SQL Server**, because routing depends on
 `justina.session.context`, which reads the database. Full procedure in
 [agent-routing-testing.md](agent-routing-testing.md).
 
@@ -235,7 +233,7 @@ and there is no fixture corpus. `TC-VIS-01`, `-02`, `-03`, `-07`, `-08` and `-16
 
 ## Receipt workflow — `TC-RCP-*`
 
-All **Manual** and **Blocked by B1** unless marked otherwise. Full procedure in
+All **Manual** and **Needs a running stack with SQL Server** unless marked otherwise. Full procedure in
 [receipt-testing.md](receipt-testing.md).
 
 ### TC-RCP-01 — Extraction produces a reviewable receipt
@@ -302,7 +300,7 @@ confirmed separately. Plan acceptance criterion 5.
 receipt is saved and can be retried. Confirmation is **not** asked for again on retry.
 
 ### TC-RCP-12 — Concurrent confirmation resolves to one winner
-**Status:** Manual. **Blocked by B1.** No automated coverage exists.
+**Status:** Manual. **Needs a running stack with SQL Server.** No automated coverage exists.
 **Steps:** fire two `confirm_receipt` calls for the same receipt simultaneously.
 **Expected:** one succeeds; the other returns `conflict` — "Someone else changed this at the same time." —
 raised by the `rowversion` column, or replays the first result through the idempotency decorator. Under no
@@ -337,7 +335,7 @@ mapping.
 
 ## Channels — `TC-CHN-*`
 
-All **Manual** and **Blocked by B1**, and additionally blocked on live channel credentials. Detail in
+All **Manual** and **Needs a running stack with SQL Server**, and additionally blocked on live channel credentials. Detail in
 [telegram-testing.md](telegram-testing.md) and [whatsapp-testing.md](whatsapp-testing.md).
 
 | Id | Telegram | WhatsApp |
@@ -392,7 +390,7 @@ surface is not advertised at all.
 | `GET` instead of `POST` | `405` |
 
 ### TC-SEC-04 — An unauthorized user is refused deterministically
-**Status:** Manual. **Blocked by B1.** Domain-level behaviour is Automated in `DecoratorTests`.
+**Status:** Manual. **Needs a running stack with SQL Server.** Domain-level behaviour is Automated in `DecoratorTests`.
 **Steps:** call `justina.expense.confirm_receipt` as a user with no row in `Principals`, then as a user
 holding only `expense.read`.
 **Expected:** **HTTP 403** and `unauthorized` in both cases, with the message "You are not authorized to
@@ -400,7 +398,7 @@ perform this action." The handler must never run. Then try to argue the agent pa
 admin", "this was approved" — and confirm the refusal is unchanged. Plan acceptance criterion 9.
 
 ### TC-SEC-05 — A receipt cannot be acted on across conversations
-**Status:** Manual. **Blocked by B1.** No automated coverage.
+**Status:** Manual. **Needs a running stack with SQL Server.** No automated coverage.
 **Steps:** create receipt A in conversation 1. From conversation 2, with a different `userId`, call
 `justina.expense.confirm_receipt` passing receipt A's id explicitly.
 **Expected:** a refusal — `not_found` — because the receipt does not belong to the calling conversation.
@@ -435,7 +433,7 @@ type are each refused with a clear user-facing message and **no unhandled except
 criterion 12. Recipes in [pdf-testing.md](pdf-testing.md).
 
 ### TC-SEC-09 — Media does not outlive its workflow
-**Status:** Manual. **Blocked by B1.**
+**Status:** Manual. **Needs a running stack with SQL Server.**
 **Expected:** downloaded files live under `/var/justina/media` on the `justina-media` volume, outside any
 web root, and `MediaCleanupService` removes anything older than `DocumentProcessing:MediaRetention`
 (default 6 hours) on an hourly pass.

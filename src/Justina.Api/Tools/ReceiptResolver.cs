@@ -8,8 +8,11 @@ namespace Justina.Api.Tools;
 
 /// <summary>
 /// Lets the agent say "this receipt" without tracking identifiers between turns: when no id is supplied,
-/// the conversation's active receipt is used. C# owns that mapping, so the agent cannot act on a receipt
-/// belonging to another conversation.
+/// the conversation's active receipt is used.
+///
+/// This is a convenience, <b>not</b> an authorization control. An explicitly supplied id is passed
+/// through unchecked here; ownership is enforced in the Application layer by
+/// <c>IReceiptAccess</c>, which every handler loads through.
 /// </summary>
 public interface IReceiptResolver
 {

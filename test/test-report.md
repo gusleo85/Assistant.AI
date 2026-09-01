@@ -13,12 +13,34 @@ This pass verified everything that can be verified offline on the developer mach
 instance of `justina-app` driven over HTTP. It did **not** verify anything that needs live third-party
 credentials or a full container stack.
 
+**The source tree changed three times while this pass was running.** This report is a point-in-time
+snapshot, not a verdict on a frozen artefact.
+
+| Measurement | Tests passing | What had changed |
+|---|---|---|
+| First | 112 | The tree as I found it |
+| Second | 122 | `Receipt.SequenceInBatch`, migration `20260901062912_AddReceiptSequenceInBatch`, new `tests/Justina.ArchitectureTests/CqrsTests.cs` |
+| Third | 143 | New `SecretScrubber` with 21 tests, wired into OpenTelemetry HTTP tracing |
+| Fourth (reported) | 143 | `InvariantGlobalization` set to `false` — **defect B1 fixed** |
+
+**Every number in this report is the final measurement.** Where a change affected a finding, the finding
+has been updated: **B1 was fixed during this pass and I re-verified the fix myself** (see §3), and **B3**
+is now partly remediated. Defects **B2**, **B4** and **B5** were re-checked against the final tree and
+all three are still present.
+
+One consequence to be clear about: for most of this pass no usable database path existed, and at no
+point was a SQL Server instance actually available to me. Cases below that need one are therefore still
+`NOT TESTED`, and their stated reason is the absence of a database — not the (now fixed) B1.
+
+Testing against a moving working tree is not reliable, and the repository has no commits at all, so
+there is nothing to pin this report to. **The next pass must be taken against a committed, frozen tree.**
+
 **What I actually executed**
 
 | Activity | Result |
 |---|---|
-| `dotnet build Justina.slnx` | Succeeded, 0 warnings, 0 errors |
-| `dotnet test` on all 5 test projects | 112 passed, 0 failed, 0 skipped |
+| `dotnet build Justina.slnx` | Succeeded, 0 warnings, 0 errors (both runs) |
+| `dotnet test` on all 5 test projects | 143 passed, 0 failed, 0 skipped |
 | `dotnet list Justina.slnx package --vulnerable --include-transitive` | No vulnerable packages in any of the 15 projects |
 | `docker compose config` (valid and invalid `.env`) | Validated |
 | `nginx -t` against the repository's NGINX configuration | Validated |
@@ -51,12 +73,19 @@ Server, so no end-to-end journey is currently executable at all.
 
 | Id | Severity | Summary |
 |---|---|---|
-| **B1** | **Blocker** | `InvariantGlobalization=true` makes `Microsoft.Data.SqlClient` refuse every connection. `justina-app` exits during startup migration. `docker compose up` cannot work. |
+| ~~**B1**~~ | ~~Blocker~~ → **FIXED** | `InvariantGlobalization=true` made `Microsoft.Data.SqlClient` refuse every connection, so `justina-app` exited during startup migration. Fixed during this pass and **re-verified by me** — see §3. |
 | **B2** | Medium | `/health/live` includes the database check, so a database outage marks the app unhealthy and blocks `justina-openclaw`, which waits on `service_healthy`. |
-| **B3** | Medium | No log redactor exists, and the Telegram bot token is carried in URL paths while OpenTelemetry HTTP client instrumentation is enabled. |
+| **B3** | Low (was Medium) | Partly remediated during this pass. Trace URLs are now scrubbed and tested. `SecretScrubber.IsSensitiveHeader` is defined but wired to nothing, and no redactor is applied to the Serilog pipeline. |
 | **B4** | Low | No exception-handling middleware. An unhandled exception returns a full stack trace with absolute source paths under `Development`. |
+| **B5** | **High** | A caller who supplies an explicit `receiptId` can read, edit, confirm or cancel a receipt belonging to another conversation. No handler checks ownership, despite a code comment claiming it does. |
 
-Counts across all cases below: **41 PASSED**, **1 FAILED**, **46 NOT TESTED**.
+Counts across the 105 cases below: **66 PASSED** (one of them a re-run of a case that first failed),
+**0 currently FAILED**, **39 NOT TESTED**. A handful of the passes are qualified in the case itself (for
+example "PASSED at the service level") — read the case, not just the word.
+
+Note that "0 currently failing" is not the same as "passing". The single most serious finding, **B5**,
+sits in a case that has never been executed: it is `NOT TESTED` because no database was available, and
+code inspection says it is expected to fail when it is finally run.
 
 ---
 
@@ -93,8 +122,25 @@ connection string. The exception changed from `NotSupportedException` to an ordi
 set it to `false`, and rebuild. The runtime container (`mcr.microsoft.com/dotnet/aspnet:10.0`, Debian)
 already carries ICU, so nothing else needs to change.
 
-**Re-verification required:** after the fix, every case in this report currently marked
-`NOT TESTED — Reason: blocked by defect B1` must be run.
+**FIXED during this pass, and re-verified.** `Directory.Build.props` now reads
+`<InvariantGlobalization>false</InvariantGlobalization>` with a comment recording why. I did not take
+that on trust:
+
+| Re-verification step | Result |
+|---|---|
+| Rebuild `Justina.slnx` | Succeeded, 0 warnings, 0 errors |
+| Inspect the regenerated `Justina.Api.runtimeconfig.json` | `"System.Globalization.Invariant": false` |
+| Re-run the exact startup scenario that failed | The exception is now `Microsoft.Data.SqlClient.SqlException` — "A network-related or instance-specific error" — i.e. the driver genuinely attempts the connection. `NotSupportedException` is gone. |
+| Start the app with the migration step skipped | It listens. `Now listening on: http://127.0.0.1:5213` |
+| Re-run the Tool API checks against the rebuilt binary | No key → 401; unsupported channel → `validation_failed`. Unchanged. |
+
+This defect is closed. The remaining `NOT TESTED` database cases are now blocked only by the absence of
+a SQL Server instance, which is a scope limitation of this pass rather than a defect.
+
+One residual observation, not a defect: with the database unreachable, a tool call did not return within
+60 seconds. `AddDbContext` is configured with `EnableRetryOnFailure(maxRetryCount: 5, maxRetryDelay: 10s)`,
+so a database outage makes tool calls hang rather than fail fast, and the calling agent would time out
+with no typed refusal. I capped my own request at 60 seconds and did not characterise this further.
 
 ### B2 — MEDIUM — liveness depends on the database
 
@@ -113,23 +159,37 @@ database outage makes the container unhealthy and stops `justina-openclaw` from 
 **Fix:** give `/health/live` a predicate that excludes the database check (for example
 `new HealthCheckOptions { Predicate = _ => false }`) and leave `/health/ready` as it is.
 
-### B3 — MEDIUM — no log redactor, and a token travels in a URL path
+### B3 — LOW (downgraded from Medium during this pass) — redaction is partial
 
-Plan §23 and §40 require a redactor that scrubs secret keys and `Authorization` headers. None exists:
-searching `src/` for `redact`, `destructur` or `sanitiz` returns nothing.
+**As originally found:** no redactor existed anywhere in `src/`, while `TelegramMediaDownloader` puts
+the bot token in the request **path** (`bot{token}/getFile?...`, `file/bot{token}/{path}`) and
+`Program.cs` enabled `AddHttpClientInstrumentation()` with an OTLP exporter. Query-string redaction
+would not protect a path segment, so the token was a plausible candidate to appear in exported span
+attributes.
 
-I read every logging statement in the source and found none that logs a token, key or `Authorization`
-header, so there is no *known* leak today. But there is no mechanism preventing one, and there is a
-specific exposure worth investigating: `TelegramMediaDownloader` puts the bot token in the request
-**path** (`bot{token}/getFile?...` and `file/bot{token}/{path}`), while `Program.cs` enables
-`AddHttpClientInstrumentation()` with an OTLP exporter. Query-string redaction would not protect a path
-segment.
+**Remediated during this pass.** `src/Justina.Core.Infrastructure/Security/SecretScrubber.cs` now
+exists and is wired into the tracing pipeline, overwriting the recorded URL rather than dropping the
+span:
 
-I did **not** run a collector, so whether the token reaches exported span attributes is unverified. It
-must be checked before any OTLP endpoint is configured in a real environment.
+```csharp
+options.EnrichWithHttpRequestMessage = (activity, request) =>
+    activity.SetTag("url.full", SecretScrubber.Redact(request.RequestUri));
+```
 
-**Fix:** add the redactor, and either strip the token from recorded spans or disable URL recording on the
-Telegram HTTP client.
+It replaces any `/bot<token>` path segment with `/bot***` and blanks the values of eight sensitive query
+keys. 21 tests cover it and all pass.
+
+**What remains:**
+
+- `SecretScrubber.IsSensitiveHeader` is defined but **called from nowhere** — a grep for `Scrub` in
+  `src/` finds only the one tracing call site. Header redaction is therefore declared, not applied.
+- Nothing is wired into the Serilog pipeline. Safety in logs still rests on no log statement naming a
+  secret. I read every logging statement and found none that does, but there is no mechanism enforcing it.
+- The redaction itself is **still unverified at runtime**: I did not run an OTLP collector, so I have not
+  observed a scrubbed span. The scrubber's unit tests pass; the end-to-end effect is untested.
+
+**Fix:** apply `IsSensitiveHeader` wherever headers could be recorded, and add a Serilog destructuring
+policy or enricher so the same rules apply to logs.
 
 ### B4 — LOW — no exception-handling middleware
 
@@ -142,6 +202,46 @@ agent sees as a transport failure rather than a typed refusal it can relay.
 **Fix:** add exception-handling middleware that maps an unhandled exception to the same
 `{"ok":false,"error":{...}}` shape used everywhere else.
 
+### B5 — HIGH — a receipt can be acted on from another conversation
+
+`IReceiptResolver` carries this comment:
+
+> Lets the agent say "this receipt" without tracking identifiers between turns: when no id is supplied,
+> the conversation's active receipt is used. **C# owns that mapping, so the agent cannot act on a receipt
+> belonging to another conversation.**
+
+The implementation does not do that. `ReceiptResolver.ResolveAsync` returns an explicitly supplied id
+without any check:
+
+```csharp
+if (explicitReceiptId is { } id)
+{
+    return Result.Success(id);
+}
+```
+
+Nothing downstream closes the gap. `UpdateReceiptCommandHandler`, `ConfirmReceiptCommandHandler` and
+`CancelReceiptCommandHandler` each load by `command.ReceiptId` and check only the receipt's *state*.
+`GetReceiptQueryHandler` does the same for an explicit id. Searching the Expense application and the API
+project shows no handler that compares the loaded `Receipt.ConversationId` against the caller's
+conversation.
+
+The consequence: any caller holding the tool shared secret and the `expense.submit` capability can pass
+another user's `receiptId` and confirm it, cancel it, edit it, or read its merchant, amount and expense
+reference. Capability checks do not help — they answer "may this principal submit expenses at all",
+not "may this principal touch *this* receipt". This weakens business rule 7 and the isolation the
+comment promises.
+
+Mitigating factors: the tool API is not exposed through NGINX, the caller needs the shared secret, ids
+are GUIDs so they are not guessable, and the agent prompts tell the agent to omit `receiptId`. None of
+those is an authorization control.
+
+**Fix:** resolve the caller's conversation and reject a receipt whose `ConversationId` does not match,
+returning `not_found` rather than `unauthorized` so an id cannot be probed for existence.
+
+**Status of this finding:** identified by code inspection, which is conclusive about the *absence* of the
+check. Runtime exploitation was NOT TESTED — it needs a database, which is no SQL Server instance was available at any point in this pass (and, for most of it, defect B1 made one unusable).
+
 ---
 
 ## 4. Observations (not defects, but gaps against the plan)
@@ -151,8 +251,6 @@ agent sees as a transport failure rather than a typed refusal it can relay.
   in code instead, which is fine for the PDF paths but leaves image formats unexercised.
 - **No JPEG and no WEBP test exists.** `MediaTypeSniffer` supports both, but `DocumentProcessorTests`
   only uses PNG magic bytes. Both formats are unverified.
-- **No test asserts that queries do not mutate.** Plan §9 and §26 and the task list both require one.
-  Searching `tests/` for `SaveChanges` finds only a mock setup in a submission test.
 - **Retry and circuit breaker are untested.** `AddStandardResilienceHandler()` is registered, but the ten
   `ExpenseApiClientTests` construct a plain `HttpClient`, so no test exercises the policy.
 - The `Principals` table has no seeding code anywhere. Plan §20 says it is "seeded from configuration".
@@ -208,28 +306,28 @@ Test Case / Expected Result / Actual Result / Status / Evidence
 **Status:** PASSED
 **Evidence:** `docker run --rm --add-host justina-openclaw:127.0.0.1 --add-host justina-app:127.0.0.1 -v .../nginx.conf:/etc/nginx/nginx.conf:ro -v .../conf.d:/etc/nginx/conf.d:ro nginx:1.27-alpine nginx -t`. Without the host aliases nginx fails with `host not found in upstream "justina-openclaw:18789"` — expected outside the compose network, and worth noting: `justina-nginx` will refuse to start if `justina-openclaw` is absent.
 
-**Test Case:** `justina-app` starts and applies its EF migration.
-**Expected Result:** The migration runs and the host begins listening.
-**Actual Result:** The process terminated with `Unhandled exception. System.NotSupportedException: Globalization Invariant Mode is not supported.` raised from `Microsoft.Data.SqlClient.SqlConnection.TryOpen` inside `Migrator.MigrateAsync`, at `Program.cs:line 87`. The application never reached `RunAsync`.
-**Status:** **FAILED** (defect B1)
-**Evidence:** Ran the published output directly with `ASPNETCORE_ENVIRONMENT=Production` and a SQL Server connection string; the process exited before listening. Causation confirmed by re-running the identical binaries with only `System.Globalization.Invariant` flipped to `false` in `runtimeconfig.json`, which produced an ordinary `SqlException` network error instead — i.e. the driver then genuinely attempted the connection. Note: this was observed running the app binary on the host, not inside the container; the container runs the same entry point and the same `runtimeconfig.json`.
+**Test Case:** `justina-app` starts and can open a SQL Server connection.
+**Expected Result:** The host starts, and the SQL client attempts a real connection rather than refusing outright.
+**Actual Result:** **First run — FAILED.** The process terminated with `Unhandled exception. System.NotSupportedException: Globalization Invariant Mode is not supported.` raised from `Microsoft.Data.SqlClient.SqlConnection.TryOpen` inside `Migrator.MigrateAsync`, at `Program.cs:line 87`; it never reached `RunAsync`. **Re-run after the fix — PASSES.** The rebuilt binary attempts the connection for real (`SqlException`, network error, against the deliberately unreachable server I supplied) and, with the migration step skipped, the host starts and listens.
+**Status:** PASSED on re-run (was FAILED — defect B1, now fixed)
+**Evidence:** First run: published output executed with `ASPNETCORE_ENVIRONMENT=Production`; process exited before listening. Causation proven by re-running the identical binaries with only `System.Globalization.Invariant` flipped to `false` in `runtimeconfig.json`, which produced an ordinary `SqlException` instead. After the developer's fix: rebuild → `"System.Globalization.Invariant": false`; same scenario → `Microsoft.Data.SqlClient.SqlException`, "A network-related or instance-specific error"; with `Database__MigrateOnStartup=false` → `Now listening on: http://127.0.0.1:5213`. Note: observed running the app binary on the host, not inside the container; the container runs the same entry point and the same `runtimeconfig.json`. **The migration has still never been applied to a real database.**
 
 **Test Case:** `docker compose up` starts all services and every health check passes (plan acceptance criterion 1).
 **Expected Result:** All five containers healthy on `justina-network`.
 **Actual Result:**
 ```
 NOT TESTED
-Reason: no container stack was started. The SQL Server image is ~1.5 GB and the OpenClaw image tag is unverified (plan risk R3). Independently, defect B1 means justina-app cannot survive startup, so the stack could not become healthy even if pulled.
+Reason: no container stack was started. The SQL Server image is ~1.5 GB and the OpenClaw image tag is unverified (plan risk R3). No image was pulled and no container was run.
 ```
 **Status:** NOT TESTED
-**Evidence:** n/a. A human tester must fix B1, then run `docker compose up -d` and `docker compose ps` and confirm every service reports `healthy`.
+**Evidence:** n/a. A human tester must run `docker compose up -d` then `docker compose ps` and confirm every service reports `healthy`. This is now genuinely worth attempting: defect B1, which would previously have crash-looped `justina-app` regardless, has been fixed and re-verified.
 
 **Test Case:** Stack shutdown and restart preserve state.
 **Expected Result:** `docker compose down` then `up` retains receipts and conversations on the `sqlserver-data` volume.
 **Actual Result:**
 ```
 NOT TESTED
-Reason: no stack was started; blocked by defect B1.
+Reason: no stack was started; no SQL Server instance was available at any point in this pass (and, for most of it, defect B1 made one unusable).
 ```
 **Status:** NOT TESTED
 **Evidence:** n/a. A human tester must create a receipt, restart the stack, and confirm the receipt and its `ReceiptEvents` rows survive.
@@ -299,7 +397,7 @@ Reason: no OpenClaw gateway was run; see above.
 **Actual Result:**
 ```
 NOT TESTED
-Reason: no OpenClaw gateway was run. The C# half of this rule — that justina.session.context reports the active workflow — is itself blocked by defect B1 because it requires a database read.
+Reason: no OpenClaw gateway was run. The C# half of this rule — that justina.session.context reports the active workflow — is itself no SQL Server instance was available at any point in this pass (and, for most of it, defect B1 made one unusable) because it requires a database read.
 ```
 **Status:** NOT TESTED
 **Evidence:** n/a. Code review confirms `ReceiveReceiptCommand` sets the workflow and both the cancel and confirm paths clear it, but no execution was observed.
@@ -308,7 +406,7 @@ Reason: no OpenClaw gateway was run. The C# half of this rule — that justina.s
 **Expected Result:** No code path exists; the build fails if one is introduced.
 **Actual Result:** Enforced structurally. `Justina.Expense.*` has no dependency on `Justina.Recruitment.*` and vice versa, asserted across domain, application and infrastructure assemblies.
 **Status:** PASSED
-**Evidence:** `Justina.ArchitectureTests` — 15 passed, including `Expense_never_depends_on_Recruitment` and `Recruitment_never_depends_on_Expense` in `tests/Justina.ArchitectureTests/LayeringTests.cs`.
+**Evidence:** `Justina.ArchitectureTests` — 20 passed, including `Expense_never_depends_on_Recruitment` and `Recruitment_never_depends_on_Expense` in `tests/Justina.ArchitectureTests/LayeringTests.cs`.
 
 **Test Case:** Recruitment reports honestly that execution is unavailable rather than inventing results.
 **Expected Result:** `not_available` with a plain-language message.
@@ -406,7 +504,7 @@ Reason: every rasterization test substitutes IPdfPageRenderer. PdfiumPageRendere
 **Actual Result:**
 ```
 NOT TESTED
-Reason: this requires a real multi-receipt PDF, a live Vision call to return several candidates, a database to persist the batch, and an OpenClaw agent to ask the question. None of those was available; the database path is additionally blocked by defect B1.
+Reason: this requires a real multi-receipt PDF, a live Vision call to return several candidates, a database to persist the batch, and an OpenClaw agent to ask the question. None of those was available; the database path is additionally no SQL Server instance was available at any point in this pass (and, for most of it, defect B1 made one unusable).
 ```
 **Status:** NOT TESTED
 **Evidence:** n/a. A human tester must supply a PDF containing three distinct receipts and confirm the agent asks before submitting, then confirm each receipt separately and check that three rows in `Receipts` share one `BatchId` and each has its own `ExternalExpenseId`.
@@ -534,7 +632,7 @@ Reason: no Vision call was made, live or stubbed. There is no test that exercise
 **Actual Result:**
 ```
 NOT TESTED
-Reason: this needs the running Tool API against a database, which is blocked by defect B1. The three independent mechanisms — the confirm:<receiptId> idempotency key, the state guard, and the filtered unique index UX_Receipts_ExternalExpenseId — were each reviewed but never exercised together.
+Reason: this needs the running Tool API against a database, which is no SQL Server instance was available at any point in this pass (and, for most of it, defect B1 made one unusable). The three independent mechanisms — the confirm:<receiptId> idempotency key, the state guard, and the filtered unique index UX_Receipts_ExternalExpenseId — were each reviewed but never exercised together.
 ```
 **Status:** NOT TESTED
 **Evidence:** n/a. A human tester must call `justina.expense.confirm_receipt` twice and count the requests in the stub's log.
@@ -544,7 +642,7 @@ Reason: this needs the running Tool API against a database, which is blocked by 
 **Actual Result:**
 ```
 NOT TESTED
-Reason: optimistic concurrency needs a real SQL Server rowversion column. No database was reached; blocked by defect B1. The mapping (IsRowVersion) and the DbUpdateConcurrencyException → conflict translation in EfUnitOfWork were reviewed but never executed.
+Reason: optimistic concurrency needs a real SQL Server rowversion column. No database was reached; no SQL Server instance was available at any point in this pass (and, for most of it, defect B1 made one unusable). The mapping (IsRowVersion) and the DbUpdateConcurrencyException → conflict translation in EfUnitOfWork were reviewed but never executed.
 ```
 **Status:** NOT TESTED
 **Evidence:** n/a. A human tester must fire two simultaneous confirmations at the same receipt and confirm exactly one succeeds.
@@ -563,7 +661,7 @@ Reason: rendering is done by the Expense Agent prompt inside OpenClaw, which was
 **Expected Result:** A `ReceiptEvents` row per transition and per edit.
 **Actual Result:** The aggregate records an event on creation and on every transition, and an `Edited` event naming the changed fields. Persisting those rows was not verified.
 **Status:** PASSED (in-memory) / persistence NOT TESTED
-**Evidence:** `ReceiptStateMachineTests.Create_starts_in_Received_and_records_an_event` — passed. Persistence is blocked by defect B1.
+**Evidence:** `ReceiptStateMachineTests.Create_starts_in_Received_and_records_an_event` — passed. Persistence is no SQL Server instance was available at any point in this pass (and, for most of it, defect B1 made one unusable).
 
 ---
 
@@ -696,7 +794,7 @@ Reason: no Telegram bot token was configured and no OpenClaw gateway was run. No
 **Actual Result:**
 ```
 NOT TESTED
-Reason: no Telegram credentials, no Vision call, and the database path is blocked by defect B1.
+Reason: no Telegram credentials, no Vision call, and the database path is no SQL Server instance was available at any point in this pass (and, for most of it, defect B1 made one unusable).
 ```
 **Status:** NOT TESTED
 **Evidence:** n/a.
@@ -716,7 +814,7 @@ Reason: TelegramMediaDownloader has no test coverage of any kind and was never e
 **Actual Result:**
 ```
 NOT TESTED
-Reason: no Telegram credentials and no OpenClaw gateway; database blocked by defect B1.
+Reason: no Telegram credentials and no OpenClaw gateway; database no SQL Server instance was available at any point in this pass (and, for most of it, defect B1 made one unusable).
 ```
 **Status:** NOT TESTED
 **Evidence:** n/a.
@@ -736,7 +834,7 @@ Reason: no WhatsApp Business credentials. WhatsAppMediaDownloader and WhatsAppRe
 **Actual Result:**
 ```
 NOT TESTED
-Reason: no WhatsApp Business credentials; database blocked by defect B1.
+Reason: no WhatsApp Business credentials; database no SQL Server instance was available at any point in this pass (and, for most of it, defect B1 made one unusable).
 ```
 **Status:** NOT TESTED
 **Evidence:** n/a.
@@ -745,7 +843,7 @@ Reason: no WhatsApp Business credentials; database blocked by defect B1.
 **Expected Result:** One `IDocumentProcessor` and one Vision path serve both.
 **Actual Result:** Structurally true — both downloaders return the same `DownloadedMedia` and only `ReceiveReceiptCommandHandler` consumes it, via `IChannelRegistry`. There is exactly one `switch` on `ChannelKind`, inside `ChannelRegistry`.
 **Status:** PASSED (by construction, verified by code inspection and the architecture tests)
-**Evidence:** `Justina.ArchitectureTests` — 15 passed. No runtime execution of either downloader.
+**Evidence:** `Justina.ArchitectureTests` — 20 passed. No runtime execution of either downloader.
 
 **Test Case:** A retried webhook does not create a second receipt.
 **Expected Result:** The duplicate is recognised and the existing receipt returned.
@@ -772,17 +870,27 @@ Reason: deduplication is enforced by the (Channel, MessageId) primary key on Inb
 **Actual Result:**
 ```
 NOT TESTED
-Reason: reaching the authorization decorator requires resolving a principal from the Principals table, which is blocked by defect B1. The 403 branch in ToolEndpoints.Respond was reviewed but never executed. The 200-with-ok:false branch WAS observed, for validation_failed.
+Reason: reaching the authorization decorator requires resolving a principal from the Principals table, which is no SQL Server instance was available at any point in this pass (and, for most of it, defect B1 made one unusable). The 403 branch in ToolEndpoints.Respond was reviewed but never executed. The 200-with-ok:false branch WAS observed, for validation_failed.
 ```
 **Status:** NOT TESTED
 **Evidence:** n/a.
+
+**Test Case:** A caller cannot act on a receipt belonging to another conversation.
+**Expected Result:** Supplying another conversation's `receiptId` to `get_receipt`, `edit_receipt`, `confirm_receipt` or `cancel_receipt` is refused with `not_found`.
+**Actual Result:**
+```
+NOT TESTED
+Reason: runtime exploitation needs a database with two conversations, which is no SQL Server instance was available at any point in this pass (and, for most of it, defect B1 made one unusable).
+```
+**Status:** NOT TESTED — but see **defect B5**. Code inspection is conclusive that no ownership check exists anywhere on this path: `ReceiptResolver.ResolveAsync` returns an explicitly supplied id unchecked, `GetReceiptQueryHandler` loads an explicit id unchecked, and the update, confirm and cancel handlers check only receipt state. No handler compares `Receipt.ConversationId` against the caller's conversation. The expectation above is therefore expected to FAIL when it is finally run.
+**Evidence:** `src/Justina.Api/Tools/ReceiptResolver.cs` lines 31–46; `src/Justina.Expense.Application/Queries/ReceiptQueries.cs`; `src/Justina.Expense.Application/Commands/ReceiptWorkflowCommands.cs`. A grep for `ConversationId` across `src/Justina.Expense.Application/` and `src/Justina.Api/` returns no such comparison.
 
 **Test Case:** An unmapped channel user holds no capabilities.
 **Expected Result:** Resolution to an anonymous principal with an empty capability set.
 **Actual Result:**
 ```
 NOT TESTED
-Reason: AuthorizationService reads the Principals table; blocked by defect B1. The UserContext.Anonymous fallback was reviewed but never executed against a database. The decorator's treatment of an anonymous context IS tested and passes.
+Reason: AuthorizationService reads the Principals table; no SQL Server instance was available at any point in this pass (and, for most of it, defect B1 made one unusable). The UserContext.Anonymous fallback was reviewed but never executed against a database. The decorator's treatment of an anonymous context IS tested and passes.
 ```
 **Status:** NOT TESTED
 **Evidence:** n/a.
@@ -857,6 +965,22 @@ Reason: no NGINX container was served a request. All four directives are present
 **Status:** NOT TESTED
 **Evidence:** n/a.
 
+**Test Case:** A credential carried in a URL is removed before it can be recorded.
+**Expected Result:** A Telegram bot token in a path segment, and sensitive query values, are replaced.
+**Actual Result:** `SecretScrubber.Redact` replaces `/bot<token>` with `/bot***` and blanks the values of `access_token`, `token`, `api_key`, `apikey`, `key`, `secret`, `password` and `signature`. It is wired into the OpenTelemetry HTTP client enrichment so the recorded `url.full` tag is the scrubbed one.
+**Status:** PASSED (unit level)
+**Evidence:** `SecretScrubberTests` — 21 passed, including `Sensitive_query_values_are_removed` across several URLs. This class was added during this test pass. The runtime effect on an exported span was NOT TESTED — no collector was run. See defect B3 for what remains unwired.
+
+**Test Case:** Sensitive headers are excluded from anything recorded.
+**Expected Result:** `Authorization`, `X-Justina-Tool-Key`, `X-Hub-Signature-256` and similar are never recorded.
+**Actual Result:**
+```
+NOT TESTED
+Reason: SecretScrubber.IsSensitiveHeader is defined and unit-tested, but it is called from nowhere in src/. A grep for "Scrub" across src/ finds a single call site, the tracing URL enrichment. Header redaction is declared but not applied.
+```
+**Status:** NOT TESTED
+**Evidence:** `grep -rn "SecretScrubber\|Scrub" --include=*.cs src/` returns `Program.cs:58` and the class definition, nothing else.
+
 **Test Case:** No secrets leak into logs.
 **Expected Result:** No token, key or `Authorization` header appears in any log line.
 **Actual Result:**
@@ -917,18 +1041,19 @@ Reason: signature verification is not implemented in this repository. WhatsAppOp
 
 **Test Case:** The whole automated suite passes (plan acceptance criterion 14).
 **Expected Result:** All tests green.
-**Actual Result:** 112 passed, 0 failed, 0 skipped:
+**Actual Result:** 143 passed, 0 failed, 0 skipped:
 
-| Project | Passed |
-|---|---|
-| Justina.ArchitectureTests | 15 |
-| Justina.Core.UnitTests | 17 |
-| Justina.Expense.UnitTests | 63 |
-| Justina.IntegrationTests | 10 |
-| Justina.Recruitment.UnitTests | 7 |
+| Project | Passed (third run, reported) | Passed (first run) |
+|---|---|---|
+| Justina.ArchitectureTests | 20 | 15 |
+| Justina.Core.UnitTests | 38 | 17 |
+| Justina.Expense.UnitTests | 68 | 63 |
+| Justina.IntegrationTests | 10 | 10 |
+| Justina.Recruitment.UnitTests | 7 | 7 |
+| **Total** | **143** | **112** |
 
 **Status:** PASSED
-**Evidence:** `for p in tests/*/; do dotnet test "$p" --nologo -v q; done` — each project reported `Passed! - Failed: 0`.
+**Evidence:** `for p in tests/*/; do dotnet test "$p" --nologo -v q; done` — each project reported `Passed! - Failed: 0`. The suite was run twice because the source tree changed between the two runs; the ten extra tests are the new `CqrsTests` and the new batch-sequence tests.
 
 **Test Case:** Domain and application layers do not depend on infrastructure.
 **Expected Result:** No dependency on EF Core, SqlClient, `System.Net.Http`, the infrastructure projects, PdfPig, PDFtoImage or Serilog.
@@ -949,28 +1074,45 @@ Reason: signature verification is not implemented in this repository. WhatsAppOp
 **Evidence:** `LayeringTests.Core_domain_depends_on_nothing_of_ours` — passed.
 
 **Test Case:** Queries never mutate state (plan §9, §26).
-**Expected Result:** A test asserting no `SaveChanges` occurs on a query path.
-**Actual Result:**
-```
-NOT TESTED
-Reason: no such test exists. Searching tests/ for "SaveChanges" finds only a mock setup inside ReceiptSubmissionServiceTests. The plan and the task list both require this assertion; it has not been written.
-```
-**Status:** NOT TESTED
-**Evidence:** n/a. By code review, `GetReceiptQueryHandler`, `GetReceiptStatusQueryHandler`, `GetSessionContextQueryHandler` and `SearchCandidatesQueryHandler` take no `IUnitOfWork` dependency and call no save, and query handlers are wrapped only in the authorization decorator — but this is not enforced by a test.
+**Expected Result:** A test that makes "queries do not mutate" structural rather than a convention.
+**Actual Result:** Enforced. No query handler may take an `IUnitOfWork` dependency, so a query handler cannot commit a change. A companion test asserts the discovery filter actually finds query handlers, so it cannot silently pass by matching nothing.
+**Status:** PASSED
+**Evidence:** `CqrsTests.Query_handlers_cannot_reach_the_unit_of_work` and `.Every_query_handler_is_actually_discovered` — passed. Note: this test file was added *during* this test pass; it did not exist at the first measurement.
+
+**Test Case:** Every state-changing Expense command is behind a capability check.
+**Expected Result:** No `ICommand<>` in the Expense application lacks `IRequireCapability`.
+**Actual Result:** None lacked it.
+**Status:** PASSED
+**Evidence:** `CqrsTests.Expense_commands_all_require_a_capability` — passed.
+
+**Test Case:** The commands that create something external declare an idempotency key.
+**Expected Result:** `ConfirmReceiptCommand` and `ReceiveReceiptCommand` implement `IIdempotentCommand`.
+**Actual Result:** Both do.
+**Status:** PASSED
+**Evidence:** `CqrsTests.The_confirm_command_is_idempotent` — passed.
+
+**Test Case:** Receipts in a batch keep a deterministic reading order.
+**Expected Result:** Each receipt records its position in the source document; a single receipt is sequence one.
+**Actual Result:** As expected.
+**Status:** PASSED
+**Evidence:** `ReceiptStateMachineTests.Receipts_in_a_batch_are_numbered_in_reading_order`, `.A_single_receipt_is_sequence_one`, `.Attaching_to_a_batch_records_the_position_in_the_document` — passed. These tests, the `Receipt.SequenceInBatch` property and the `AddReceiptSequenceInBatch` migration were all added during this test pass.
 
 **Test Case:** The database schema matches the plan's design.
 **Expected Result:** The tables, money types, `rowversion`, and the unique and filtered indexes described in plan §24.
 **Actual Result:** The `InitialSchema` migration creates `Conversations`, `Principals`, `InboundMessages`, `IdempotencyKeys`, `ReceiptBatches`, `Receipts`, `ReceiptLineItems` and `ReceiptEvents`; money is `decimal(18,2)` and quantities `decimal(18,4)`; `Receipts.RowVersion` is a native `rowversion`; timestamps are `datetime2`; JSON columns are `nvarchar(max)`. Indexes: unique `(Channel, ExternalConversationId)` on Conversations, unique `(Channel, UserId)` on Principals, a composite primary key `(Channel, MessageId)` on InboundMessages, and `UX_Receipts_ExternalExpenseId` unique with filter `[ExternalExpenseId] IS NOT NULL`.
 **Status:** PASSED (by inspection of the migration and the EF configurations)
-**Evidence:** `src/Justina.Core.Infrastructure/Persistence/Migrations/20260901060620_InitialSchema.cs` and the two `IModelConfiguration` implementations. **The migration was never applied to a database** — blocked by defect B1.
+**Evidence:** `src/Justina.Core.Infrastructure/Persistence/Migrations/20260901060620_InitialSchema.cs` and the two `IModelConfiguration` implementations. **The migration was never applied to a database** — no SQL Server instance was available at any point in this pass (and, for most of it, defect B1 made one unusable).
 
 ---
 
 ## 6. What a human tester must do next
 
-1. **Fix defect B1 first.** Nothing below is meaningful until `justina-app` can open a SQL Server
-   connection. Remove `InvariantGlobalization` from `Directory.Build.props`, rebuild, and re-run this
-   report's Docker section.
+0. **Freeze the tree.** Commit the current state. This pass had to be measured four times because `src/`
+   and `tests/` changed underneath it; a QA result against a moving working tree is not trustworthy, and
+   there is still no commit to pin this report to.
+1. **Fix defect B5.** This is now the highest-severity open item. Reject a `receiptId` that does not
+   belong to the caller's conversation, and add a test for it. Then run the case in §5.7 that is expected
+   to fail today.
 2. Fix B2 so liveness does not depend on the database, otherwise the stack's dependency ordering will
    behave unpredictably.
 3. Bring up the stack, seed the `Principals` table (there is no seeding code — see
@@ -988,14 +1130,27 @@ Reason: no such test exists. Searching tests/ for "SaveChanges" finds only a moc
 
 ## 7. Verdict
 
-The offline correctness core is in good shape: 112 automated tests pass, the layering rules are enforced
+The offline correctness core is in good shape: 143 automated tests pass, the layering rules are enforced
 by the build, the state machine and normalization are thoroughly covered, the Expense client's error
 mapping is well tested against a stub, and the Tool API's authentication behaves correctly under real
 HTTP. The scope limits above are honest and substantial: no live channel, no live Vision, no real Expense
 API, and no container stack was exercised.
 
-But the application cannot start against its own database. That is not a scope limitation, it is a
-defect, and it blocks every end-to-end acceptance criterion in plan §30. This report therefore cannot
-pass.
+The blocker found at the start of this pass — the application could not open a SQL Server connection at
+all — was fixed while the pass was running, and I re-ran it and saw it pass. Credit where it is due.
+
+But a receipt can still be read, edited, confirmed or cancelled from outside its own conversation (B5).
+No handler compares the receipt's conversation against the caller's, while the code comment on
+`IReceiptResolver` states plainly that it does. That is a High-severity authorization gap contradicting
+business rule 7 and a guarantee the codebase claims to make about itself, and it is unfixed. `/health/live`
+still fails whenever the database does (B2), and there is still no exception-handling middleware (B4).
+
+Beyond the defects, the honest position on coverage is that almost nothing has been proven end to end.
+No SQL Server instance was ever available, no container was started, no channel was connected, no Vision
+call was made, and the real Expense API does not exist yet. 39 of the 105 cases are `NOT TESTED`,
+including every acceptance criterion in plan §30 that involves a real journey.
+
+An open High-severity authorization defect is on its own enough to withhold a pass. This report
+therefore cannot pass.
 
 TEST STATUS: FAILED

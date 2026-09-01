@@ -8,7 +8,12 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
-    <InvariantGlobalization>true</InvariantGlobalization>
+    <!--
+      Globalization-invariant mode must stay OFF: Microsoft.Data.SqlClient refuses to open a connection
+      under it and throws NotSupportedException before a socket is opened, which crash-loops the app at
+      startup migration. The runtime image (Debian-based aspnet:10.0) already carries ICU.
+    -->
+    <InvariantGlobalization>false</InvariantGlobalization>
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
   </PropertyGroup>
 

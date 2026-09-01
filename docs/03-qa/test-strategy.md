@@ -27,11 +27,11 @@ for p in tests/*/; do dotnet test "$p" --nologo -v q; done
 | Project | Tests | Result |
 |---|---|---|
 | `Justina.ArchitectureTests` | 20 | Passed |
-| `Justina.Core.UnitTests` | 17 | Passed |
+| `Justina.Core.UnitTests` | 38 | Passed |
 | `Justina.Expense.UnitTests` | 68 | Passed |
 | `Justina.IntegrationTests` | 10 | Passed |
 | `Justina.Recruitment.UnitTests` | 7 | Passed |
-| **Total** | **122** | **0 failed, 0 skipped** |
+| **Total** | **143** | **0 failed, 0 skipped** |
 
 The build produced 0 warnings and 0 errors. Warnings are errors in `Directory.Build.props`, so a green
 build genuinely means clean.
@@ -71,7 +71,7 @@ different for a different receipt. A failed submission leaves the receipt retrya
 **`ReceiptEditTranslatorTests`** — field synonyms (`total` → amount, `gst`/`vat` → tax), unknown fields
 refused with a usable message, the same field supplied twice refused rather than last-one-wins.
 
-### `tests/Justina.Core.UnitTests` (17 tests)
+### `tests/Justina.Core.UnitTests` (38 tests)
 
 **`DocumentProcessorTests`** — the untrusted-input boundary. Empty content, oversized content rejected
 before parsing, unsupported formats, a file that lies about its MIME type (the sniffed bytes win), a
@@ -82,6 +82,14 @@ including a rasterizer failure being surfaced rather than thrown.
 **`DecoratorTests`** — the CQRS pipeline. An unauthenticated caller is refused and the handler never
 runs. A caller without the required capability is refused. A replayed command returns the stored result
 without executing again. A failed command is **not** stored, so a transient failure stays retryable.
+
+**`SecretScrubberTests`** — credential removal from anything that might be recorded. A Telegram bot
+token sitting in a URL **path** is replaced with `/bot***`, and the values of eight sensitive query keys
+(`access_token`, `token`, `api_key`, `apikey`, `key`, `secret`, `password`, `signature`) are blanked.
+The scrubber is wired into the OpenTelemetry HTTP client enrichment in `Program.cs`, so the recorded
+`url.full` span attribute is the scrubbed one. Note two limits: `IsSensitiveHeader` is unit-tested but
+is not called from anywhere in `src/`, and nothing is wired into the Serilog pipeline — see
+[security-testing.md](security-testing.md).
 
 ### `tests/Justina.Recruitment.UnitTests` (7 tests)
 
@@ -187,10 +195,11 @@ cannot be talked past. The manual half proves the agent actually behaves that wa
 Before a manual test pass starts:
 
 - `dotnet build Justina.slnx` succeeds with 0 warnings and 0 errors.
-- All 122 automated tests pass.
+- All 143 automated tests pass.
 - `docker compose config` exits 0.
-- `justina-app` starts and `/health/ready` returns 200. **This is currently blocked** — see
-  [`test-environment.md`](test-environment.md), blocker B1.
+- `justina-app` starts and `/health/ready` returns 200. **Never yet observed** — no SQL Server instance
+  was available during the QA pass; see
+  [`test-environment.md`](test-environment.md).
 - The tester has the fixtures listed in [`test-environment.md`](test-environment.md). None ship with the
   repository; `tests/fixtures/` does not exist.
 - `Principals` has a row for the test user. There is no seeding code; it must be inserted by hand.

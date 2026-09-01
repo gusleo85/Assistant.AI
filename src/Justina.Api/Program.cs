@@ -8,6 +8,7 @@ using Justina.Expense.Application;
 using Justina.Expense.Infrastructure;
 using Justina.Recruitment.Application;
 using Justina.Recruitment.Infrastructure;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -66,9 +67,17 @@ builder.Services.AddOpenTelemetry()
 var app = builder.Build();
 
 app.UseSerilogRequestLogging();
+
+// Outermost: an unhandled exception must still leave the tool contract intact.
+app.UseMiddleware<UnhandledExceptionMiddleware>();
 app.UseMiddleware<ToolApiKeyMiddleware>();
 
-app.MapHealthChecks("/health/live");
+// Liveness must be shallow: it answers "is this process alive", not "is the database reachable".
+// Including the database check here would make a transient outage look like a dead container, and
+// justina-openclaw — which waits for this to be healthy — would never start.
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
+
+// Readiness is the one that covers dependencies (§25).
 app.MapHealthChecks("/health/ready");
 app.MapToolEndpoints();
 

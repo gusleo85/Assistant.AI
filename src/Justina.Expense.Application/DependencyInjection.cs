@@ -1,4 +1,5 @@
 using Justina.Core.Application.Messaging;
+using Justina.Expense.Application.Abstractions;
 using Justina.Expense.Application.Commands;
 using Justina.Expense.Application.Queries;
 using Justina.Expense.Application.Receipts;
@@ -10,6 +11,9 @@ public static class ExpenseApplicationServiceCollectionExtensions
 {
     public static IServiceCollection AddExpenseApplication(this IServiceCollection services)
     {
+        // Every handler loads receipts through this, so the conversation-ownership check cannot be
+        // forgotten in a new use case.
+        services.AddScoped<IReceiptAccess, ReceiptAccess>();
         services.AddScoped<IReceiptSubmissionService, ReceiptSubmissionService>();
 
         services.AddCommandHandler<ReceiveReceiptCommand, ReceiveReceiptResult, ReceiveReceiptCommandHandler>();

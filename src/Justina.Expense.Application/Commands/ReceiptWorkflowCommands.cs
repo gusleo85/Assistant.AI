@@ -22,7 +22,7 @@ public sealed record UpdateReceiptCommand(
 }
 
 public sealed class UpdateReceiptCommandHandler(
-    IReceiptRepository receipts,
+    IReceiptAccess receipts,
     IUnitOfWork unitOfWork,
     IClock clock)
     : ICommandHandler<UpdateReceiptCommand, ReceiptSnapshot>
@@ -31,12 +31,14 @@ public sealed class UpdateReceiptCommandHandler(
         UpdateReceiptCommand command,
         CancellationToken cancellationToken)
     {
-        var receipt = await receipts.GetAsync(command.ReceiptId, cancellationToken).ConfigureAwait(false);
+        var loaded = await receipts.GetAsync(command.Context, command.ReceiptId, cancellationToken).ConfigureAwait(false);
 
-        if (receipt is null)
+        if (loaded.IsFailure)
         {
-            return Result.Failure<ReceiptSnapshot>(ErrorCodes.NotFound, "That receipt no longer exists.");
+            return Result.Failure<ReceiptSnapshot>(loaded.Error);
         }
+
+        var receipt = loaded.Value;
 
         if (receipt.State != ReceiptState.WaitingConfirmation)
         {
@@ -82,7 +84,8 @@ public sealed record ConfirmReceiptCommand(RequestContext Context, Guid ReceiptI
 }
 
 public sealed class ConfirmReceiptCommandHandler(
-    IReceiptRepository receipts,
+    IReceiptAccess receipts,
+    IReceiptRepository repository,
     IReceiptSubmissionService submission,
     IConversationStateStore conversations,
     IUnitOfWork unitOfWork,
@@ -93,12 +96,14 @@ public sealed class ConfirmReceiptCommandHandler(
         ConfirmReceiptCommand command,
         CancellationToken cancellationToken)
     {
-        var receipt = await receipts.GetAsync(command.ReceiptId, cancellationToken).ConfigureAwait(false);
+        var loaded = await receipts.GetAsync(command.Context, command.ReceiptId, cancellationToken).ConfigureAwait(false);
 
-        if (receipt is null)
+        if (loaded.IsFailure)
         {
-            return Result.Failure<ReceiptSnapshot>(ErrorCodes.NotFound, "That receipt no longer exists.");
+            return Result.Failure<ReceiptSnapshot>(loaded.Error);
         }
+
+        var receipt = loaded.Value;
 
         // A second confirmation of an already-submitted receipt returns the existing expense (§33).
         if (receipt.State == ReceiptState.Submitted)
@@ -147,7 +152,7 @@ public sealed class ConfirmReceiptCommandHandler(
         CancellationToken cancellationToken)
     {
         var siblings = receipt.BatchId is { } batchId
-            ? await receipts.GetByBatchAsync(batchId, cancellationToken).ConfigureAwait(false)
+            ? await repository.GetByBatchAsync(batchId, cancellationToken).ConfigureAwait(false)
             : [receipt];
 
         // A batch keeps the workflow open until every receipt in it has been dealt with (§25).
@@ -170,7 +175,7 @@ public sealed record CancelReceiptCommand(RequestContext Context, Guid ReceiptId
 }
 
 public sealed class CancelReceiptCommandHandler(
-    IReceiptRepository receipts,
+    IReceiptAccess receipts,
     IConversationStateStore conversations,
     IUnitOfWork unitOfWork,
     IClock clock)
@@ -180,12 +185,14 @@ public sealed class CancelReceiptCommandHandler(
         CancelReceiptCommand command,
         CancellationToken cancellationToken)
     {
-        var receipt = await receipts.GetAsync(command.ReceiptId, cancellationToken).ConfigureAwait(false);
+        var loaded = await receipts.GetAsync(command.Context, command.ReceiptId, cancellationToken).ConfigureAwait(false);
 
-        if (receipt is null)
+        if (loaded.IsFailure)
         {
-            return Result.Failure<ReceiptSnapshot>(ErrorCodes.NotFound, "That receipt no longer exists.");
+            return Result.Failure<ReceiptSnapshot>(loaded.Error);
         }
+
+        var receipt = loaded.Value;
 
         if (receipt.State == ReceiptState.Cancelled)
         {
@@ -224,7 +231,7 @@ public sealed record SubmitExpenseCommand(RequestContext Context, Guid ReceiptId
 }
 
 public sealed class SubmitExpenseCommandHandler(
-    IReceiptRepository receipts,
+    IReceiptAccess receipts,
     IReceiptSubmissionService submission)
     : ICommandHandler<SubmitExpenseCommand, ReceiptSnapshot>
 {
@@ -232,12 +239,14 @@ public sealed class SubmitExpenseCommandHandler(
         SubmitExpenseCommand command,
         CancellationToken cancellationToken)
     {
-        var receipt = await receipts.GetAsync(command.ReceiptId, cancellationToken).ConfigureAwait(false);
+        var loaded = await receipts.GetAsync(command.Context, command.ReceiptId, cancellationToken).ConfigureAwait(false);
 
-        if (receipt is null)
+        if (loaded.IsFailure)
         {
-            return Result.Failure<ReceiptSnapshot>(ErrorCodes.NotFound, "That receipt no longer exists.");
+            return Result.Failure<ReceiptSnapshot>(loaded.Error);
         }
+
+        var receipt = loaded.Value;
 
         if (receipt.State is not (ReceiptState.Confirmed or ReceiptState.SubmissionFailed or ReceiptState.Submitted))
         {

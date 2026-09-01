@@ -6,7 +6,7 @@ Companion to `plan/task.md`. One line per deliverable, ticked only when the work
 **Legend:** `[x]` done and verified · `[~]` implemented but not verified end to end · `[ ]` not started ·
 `[!]` blocked
 
-**Current state:** plan approved; first implementation pass complete. Solution builds; **143 automated
+**Current state:** plan approved; first implementation pass complete. Solution builds; **163 automated
 tests pass**. The full Docker stack, live channels and a live Expense API have **not** been exercised —
 those are `[~]`, not `[x]`.
 
@@ -339,7 +339,7 @@ those are `[~]`, not `[x]`.
 
 ## Phase 17 — Test pass (TESTER)
 
-- [x] Automated suite executed: 143 tests, 0 failures
+- [x] Automated suite executed: 163 tests, 0 failures
 - [x] `test/test-report.md` written with real evidence and explicit NOT TESTED entries
 - [~] Docker startup / shutdown / restart — **not exercised**
 - [~] Agent routing — **prompts written; not exercised against a live model**

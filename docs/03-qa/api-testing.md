@@ -168,7 +168,7 @@ Expected: `405`. Confirmed on a running instance.
 
 ## A2 — Envelope validation
 
-These run before any database access, so they work even under B1.
+These run before any database access, so they work without a database at all.
 
 ### A2.1 Unsupported channel
 
@@ -429,7 +429,7 @@ dotnet test tests/Justina.IntegrationTests --nologo
 ```
 
 Expected: 10 passed, 0 failed. These do not need Docker, a database, or network access — WireMock runs
-in-process. They pass today and are unaffected by B1.
+in-process. They pass today and need no database.
 
 ## B2 — What the tests do not cover
 
@@ -627,7 +627,7 @@ confirm the header is byte-identical. Then submit a different receipt and confir
 
 | Item | Blocked by |
 |---|---|
-| Any test that reaches the database | B1 |
+| Any test that reaches the database | No SQL Server instance was available during the QA pass |
 | Real Expense API request/response shape, auth scheme, error contract | Plan risk R1 — no specification supplied |
 | Recruitment API request/response shape | Plan risk R2 — phase 1 is routing only |
 | Retry and circuit-breaker behaviour | No automated coverage; manual only (B2) |

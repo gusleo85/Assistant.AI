@@ -10,6 +10,7 @@ using Justina.Core.Infrastructure.Channels.WhatsApp;
 using Justina.Core.Infrastructure.Documents;
 using Justina.Core.Infrastructure.Media;
 using Justina.Core.Infrastructure.Persistence;
+using Justina.Core.Infrastructure.Security;
 using Justina.Core.Infrastructure.Vision;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -38,6 +39,11 @@ public static class CoreInfrastructureServiceCollectionExtensions
             builder.UseSqlServer(
                 configuration.GetConnectionString("Justina"),
                 sql => sql.EnableRetryOnFailure(maxRetryCount: 5, TimeSpan.FromSeconds(10), null)));
+
+        // Applies to every HttpClient, including ones added later: a credential-bearing header is never
+        // written to the logs even if a future client enables request logging (§40).
+        services.ConfigureHttpClientDefaults(builder =>
+            builder.RedactLoggedHeaders(SecretScrubber.IsSensitiveHeader));
 
         services.AddSingleton<IClock, SystemClock>();
         services.AddScoped<IUnitOfWork, EfUnitOfWork>();

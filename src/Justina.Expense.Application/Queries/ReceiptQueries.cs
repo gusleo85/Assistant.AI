@@ -1,4 +1,3 @@
-using Justina.Core.Application.Abstractions;
 using Justina.Core.Application.Messaging;
 using Justina.Core.Domain.Identity;
 using Justina.Core.Domain.Results;
@@ -17,40 +16,22 @@ public sealed record GetReceiptQuery(RequestContext Context, Guid? ReceiptId)
     public string RequiredCapability => Capabilities.ExpenseRead;
 }
 
-public sealed class GetReceiptQueryHandler(
-    IReceiptRepository receipts,
-    IConversationStateStore conversations)
+public sealed class GetReceiptQueryHandler(IReceiptAccess receipts)
     : IQueryHandler<GetReceiptQuery, ReceiptSnapshot>
 {
     public async Task<Result<ReceiptSnapshot>> HandleAsync(
         GetReceiptQuery query,
         CancellationToken cancellationToken)
     {
-        if (query.ReceiptId is { } explicitId)
-        {
-            var byId = await receipts.GetAsync(explicitId, cancellationToken).ConfigureAwait(false);
+        // Both paths go through the access guard: an explicit id from another conversation must not be
+        // readable, or merchant, amount and expense reference leak across users (§34).
+        var loaded = query.ReceiptId is { } explicitId
+            ? await receipts.GetAsync(query.Context, explicitId, cancellationToken).ConfigureAwait(false)
+            : await receipts.GetActiveAsync(query.Context, cancellationToken).ConfigureAwait(false);
 
-            return byId is null
-                ? Result.Failure<ReceiptSnapshot>(ErrorCodes.NotFound, "That receipt no longer exists.")
-                : Result.Success(ReceiptSnapshot.From(byId));
-        }
-
-        var conversation = await conversations
-            .GetAsync(query.Context.Channel, query.Context.ConversationId, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (conversation is null)
-        {
-            return Result.Failure<ReceiptSnapshot>(ErrorCodes.NotFound, "There is no receipt in progress.");
-        }
-
-        var active = await receipts
-            .GetActiveForConversationAsync(conversation.Id, cancellationToken)
-            .ConfigureAwait(false);
-
-        return active is null
-            ? Result.Failure<ReceiptSnapshot>(ErrorCodes.NotFound, "There is no receipt in progress.")
-            : Result.Success(ReceiptSnapshot.From(active));
+        return loaded.IsFailure
+            ? Result.Failure<ReceiptSnapshot>(loaded.Error)
+            : Result.Success(ReceiptSnapshot.From(loaded.Value));
     }
 }
 
@@ -68,23 +49,30 @@ public sealed record GetReceiptStatusQuery(RequestContext Context, Guid ReceiptI
     public string RequiredCapability => Capabilities.ExpenseRead;
 }
 
-public sealed class GetReceiptStatusQueryHandler(IReceiptRepository receipts)
+public sealed class GetReceiptStatusQueryHandler(IReceiptAccess receipts)
     : IQueryHandler<GetReceiptStatusQuery, ReceiptStatus>
 {
     public async Task<Result<ReceiptStatus>> HandleAsync(
         GetReceiptStatusQuery query,
         CancellationToken cancellationToken)
     {
-        var receipt = await receipts.GetAsync(query.ReceiptId, cancellationToken).ConfigureAwait(false);
+        var loaded = await receipts
+            .GetAsync(query.Context, query.ReceiptId, cancellationToken)
+            .ConfigureAwait(false);
 
-        return receipt is null
-            ? Result.Failure<ReceiptStatus>(ErrorCodes.NotFound, "That receipt no longer exists.")
-            : Result.Success(new ReceiptStatus(
-                receipt.Id,
-                receipt.State.ToString(),
-                receipt.State == Domain.ReceiptState.WaitingConfirmation,
-                receipt.IsTerminal,
-                receipt.ExternalExpenseId,
-                receipt.FailureReason));
+        if (loaded.IsFailure)
+        {
+            return Result.Failure<ReceiptStatus>(loaded.Error);
+        }
+
+        var receipt = loaded.Value;
+
+        return Result.Success(new ReceiptStatus(
+            receipt.Id,
+            receipt.State.ToString(),
+            receipt.State == Domain.ReceiptState.WaitingConfirmation,
+            receipt.IsTerminal,
+            receipt.ExternalExpenseId,
+            receipt.FailureReason));
     }
 }

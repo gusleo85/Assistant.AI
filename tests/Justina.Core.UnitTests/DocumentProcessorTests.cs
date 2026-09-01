@@ -166,3 +166,80 @@ public class DocumentProcessorTests
         result.Error.Code.ShouldBe(ErrorCodes.DocumentUnreadable);
     }
 }
+
+/// <summary>
+/// The sniffer is the security boundary for media type, so every format it claims to support has a test.
+/// JPEG and WEBP were previously unexercised.
+/// </summary>
+public class MediaTypeSnifferTests
+{
+    [Fact]
+    public void A_jpeg_is_recognised()
+    {
+        byte[] jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10];
+
+        MediaTypeSniffer.Sniff(jpeg).ShouldBe(MediaTypeSniffer.Jpeg);
+    }
+
+    [Fact]
+    public void A_png_is_recognised()
+    {
+        byte[] png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+
+        MediaTypeSniffer.Sniff(png).ShouldBe(MediaTypeSniffer.Png);
+    }
+
+    [Fact]
+    public void A_webp_is_recognised_by_its_riff_container()
+    {
+        var webp = new List<byte>();
+        webp.AddRange("RIFF"u8.ToArray());
+        webp.AddRange([0x20, 0x00, 0x00, 0x00]);
+        webp.AddRange("WEBP"u8.ToArray());
+
+        MediaTypeSniffer.Sniff(webp.ToArray()).ShouldBe(MediaTypeSniffer.Webp);
+    }
+
+    [Fact]
+    public void A_riff_container_that_is_not_webp_is_refused()
+    {
+        var wav = new List<byte>();
+        wav.AddRange("RIFF"u8.ToArray());
+        wav.AddRange([0x20, 0x00, 0x00, 0x00]);
+        wav.AddRange("WAVE"u8.ToArray());
+
+        MediaTypeSniffer.Sniff(wav.ToArray()).ShouldBeNull();
+    }
+
+    [Fact]
+    public void A_pdf_is_recognised()
+    {
+        MediaTypeSniffer.Sniff("%PDF-1.7"u8.ToArray()).ShouldBe(MediaTypeSniffer.Pdf);
+    }
+
+    [Theory]
+    [InlineData("MZ")]
+    [InlineData("<html>")]
+    [InlineData("GIF89a")]
+    public void Anything_else_is_refused(string content)
+    {
+        MediaTypeSniffer.Sniff(System.Text.Encoding.ASCII.GetBytes(content)).ShouldBeNull();
+    }
+
+    [Fact]
+    public void Content_too_short_to_identify_is_refused_rather_than_throwing()
+    {
+        MediaTypeSniffer.Sniff([0xFF]).ShouldBeNull();
+        MediaTypeSniffer.Sniff([]).ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData("image/jpeg", true)]
+    [InlineData("image/png", true)]
+    [InlineData("image/webp", true)]
+    [InlineData("application/pdf", false)]
+    public void Image_types_are_distinguished_from_pdf(string mimeType, bool isImage)
+    {
+        MediaTypeSniffer.IsImage(mimeType).ShouldBe(isImage);
+    }
+}
