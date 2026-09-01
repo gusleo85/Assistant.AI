@@ -30,6 +30,8 @@ public sealed record ConfirmReceiptRequest(ToolEnvelope Envelope, Guid? ReceiptI
 
 public sealed record CancelReceiptRequest(ToolEnvelope Envelope, Guid? ReceiptId = null);
 
+public sealed record RetrySubmissionRequest(ToolEnvelope Envelope, Guid? ReceiptId = null);
+
 public sealed record SearchCandidatesRequest(
     ToolEnvelope Envelope,
     string? Role = null,

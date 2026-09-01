@@ -38,7 +38,7 @@ public sealed class ReceiptBatch
 
     public Receipt AddReceipt(DateTimeOffset now)
     {
-        var receipt = Receipt.Create(ConversationId, SourceMediaId, Id, now);
+        var receipt = Receipt.Create(ConversationId, SourceMediaId, Id, now, _receipts.Count + 1);
         _receipts.Add(receipt);
         return receipt;
     }

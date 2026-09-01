@@ -114,6 +114,20 @@
       }
     },
     {
+      "name": "justina.expense.retry_submission",
+      "description": "Retry a submission that failed after the user already confirmed. Do NOT ask the user to confirm again — they already did. This is safe to call more than once and cannot create a second expense.",
+      "method": "POST",
+      "path": "/tools/expense.retry_submission",
+      "parameters": {
+        "type": "object",
+        "required": ["envelope"],
+        "properties": {
+          "envelope": { "$ref": "#/definitions/envelope" },
+          "receiptId": { "type": ["string", "null"], "format": "uuid" }
+        }
+      }
+    },
+    {
       "name": "justina.recruitment.search_candidates",
       "description": "Search for candidates. Recruitment execution is not connected yet, so this currently reports that the capability is unavailable.",
       "method": "POST",

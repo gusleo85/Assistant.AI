@@ -20,6 +20,7 @@ public sealed record ReceiptSnapshot(
     decimal? TaxAmount,
     IReadOnlyList<ReceiptLineItemSnapshot> LineItems,
     Guid? BatchId,
+    int SequenceInBatch,
     bool AwaitingConfirmation,
     bool IsSubmittable,
     string? MissingField,
@@ -44,6 +45,7 @@ public sealed record ReceiptSnapshot(
                 .Select(i => new ReceiptLineItemSnapshot(i.Description, i.Quantity, i.UnitPrice, i.Amount))
                 .ToList(),
             receipt.BatchId,
+            receipt.SequenceInBatch,
             receipt.State == ReceiptState.WaitingConfirmation,
             submittable,
             missingField,

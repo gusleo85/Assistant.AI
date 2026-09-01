@@ -36,6 +36,8 @@ public sealed class ExpenseModelConfiguration : IModelConfiguration
             entity.Property(e => e.CreatedAtUtc).HasColumnType("datetime2");
             entity.Property(e => e.UpdatedAtUtc).HasColumnType("datetime2");
 
+            entity.Property(e => e.SequenceInBatch).HasDefaultValue(1);
+
             entity.HasIndex(e => e.ConversationId).HasDatabaseName("IX_Receipts_ConversationId");
             entity.HasIndex(e => e.BatchId).HasDatabaseName("IX_Receipts_BatchId");
 

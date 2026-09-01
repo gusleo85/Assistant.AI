@@ -26,6 +26,7 @@ public static class ToolEndpoints
         tools.MapPost("/expense.edit_receipt", EditReceiptAsync);
         tools.MapPost("/expense.confirm_receipt", ConfirmReceiptAsync);
         tools.MapPost("/expense.cancel_receipt", CancelReceiptAsync);
+        tools.MapPost("/expense.retry_submission", RetrySubmissionAsync);
         tools.MapPost("/recruitment.search_candidates", SearchCandidatesAsync);
 
         return app;
@@ -226,6 +227,40 @@ public static class ToolEndpoints
 
         var result = await dispatcher
             .SendAsync(new CancelReceiptCommand(context.Value, receiptId.Value), cancellationToken)
+            .ConfigureAwait(false);
+
+        return Respond(result);
+    }
+
+    /// <summary>
+    /// Retries a submission that failed after confirmation. The user is not asked to confirm again —
+    /// they already did, and the idempotency key is unchanged, so this cannot create a second expense.
+    /// </summary>
+    private static async Task<IResult> RetrySubmissionAsync(
+        RetrySubmissionRequest request,
+        RequestContextFactory contexts,
+        IDispatcher dispatcher,
+        IReceiptResolver receipts,
+        CancellationToken cancellationToken)
+    {
+        var context = await contexts.CreateAsync(request.Envelope, cancellationToken).ConfigureAwait(false);
+
+        if (context.IsFailure)
+        {
+            return Respond(Result.Failure<ReceiptSnapshot>(context.Error));
+        }
+
+        var receiptId = await receipts
+            .ResolveAsync(context.Value, request.ReceiptId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (receiptId.IsFailure)
+        {
+            return Respond(Result.Failure<ReceiptSnapshot>(receiptId.Error));
+        }
+
+        var result = await dispatcher
+            .SendAsync(new SubmitExpenseCommand(context.Value, receiptId.Value), cancellationToken)
             .ConfigureAwait(false);
 
         return Respond(result);

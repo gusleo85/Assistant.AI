@@ -46,11 +46,13 @@ public sealed class ExtractReceiptCommandHandler(
             return Result.Failure<ReceiptExtractionOutcome>(ErrorCodes.NotFound, "That receipt no longer exists.");
         }
 
-        if (receipt.State != ReceiptState.Received)
+        // ExtractionFailed is allowed so a Vision failure can be retried against the stored document
+        // without asking the user to send it again.
+        if (receipt.State is not (ReceiptState.Received or ReceiptState.ExtractionFailed))
         {
             return Result.Failure<ReceiptExtractionOutcome>(
                 ErrorCodes.InvalidState,
-                $"This receipt is already {receipt.State} and cannot be extracted again.");
+                $"This receipt is already {receipt.State} and cannot be read again.");
         }
 
         var now = clock.UtcNow;
@@ -135,14 +137,19 @@ public sealed class ExtractReceiptCommandHandler(
         {
             var batch = ReceiptBatch.Create(receipt.ConversationId, receipt.SourceMediaId, now);
             receipts.AddBatch(batch);
-            receipt.AttachToBatch(batch.Id, now);
+            receipt.AttachToBatch(batch.Id, 1, now);
 
             Complete(receipt, candidates[0], now);
             snapshots.Add(ReceiptSnapshot.From(receipt));
 
+            // Siblings share the batch's timestamp, so the sequence — reading order in the document — is
+            // what later decides which receipt "this one" means.
+            var sequence = 1;
+
             foreach (var candidate in candidates.Skip(1))
             {
-                var sibling = Receipt.Create(receipt.ConversationId, receipt.SourceMediaId, batch.Id, now);
+                sequence++;
+                var sibling = Receipt.Create(receipt.ConversationId, receipt.SourceMediaId, batch.Id, now, sequence);
                 sibling.BeginExtraction(now);
                 Complete(sibling, candidate, now);
                 receipts.Add(sibling);

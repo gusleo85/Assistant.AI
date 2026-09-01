@@ -48,7 +48,7 @@ means writing two small adapters, not touching a domain rule.
 
 ## The tool surface
 
-Seven endpoints, all `POST`, all under `/tools`, all carrying the same envelope.
+Eight endpoints, all `POST`, all under `/tools`, all carrying the same envelope.
 
 | Tool | Kind | What it does |
 |---|---|---|
@@ -58,6 +58,7 @@ Seven endpoints, all `POST`, all under `/tools`, all carrying the same envelope.
 | `justina.expense.edit_receipt` | command | Apply named field changes |
 | `justina.expense.confirm_receipt` | command | Validate, confirm, submit — idempotent |
 | `justina.expense.cancel_receipt` | command | Abandon; submits nothing |
+| `justina.expense.retry_submission` | command | Retry a submission that failed after confirmation |
 | `justina.recruitment.search_candidates` | query | Candidate search (not connected yet) |
 
 Refusals come back as HTTP 200 with `ok: false` and a code plus a human-readable message, so the agent

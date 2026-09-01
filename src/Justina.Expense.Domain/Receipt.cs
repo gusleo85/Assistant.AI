@@ -30,12 +30,13 @@ public sealed class Receipt
         SourceMediaId = string.Empty;
     }
 
-    private Receipt(Guid conversationId, string sourceMediaId, Guid? batchId, DateTimeOffset now)
+    private Receipt(Guid conversationId, string sourceMediaId, Guid? batchId, int sequenceInBatch, DateTimeOffset now)
     {
         Id = Guid.NewGuid();
         ConversationId = conversationId;
         SourceMediaId = sourceMediaId;
         BatchId = batchId;
+        SequenceInBatch = sequenceInBatch;
         State = ReceiptState.Received;
         CreatedAtUtc = now;
         UpdatedAtUtc = now;
@@ -54,6 +55,12 @@ public sealed class Receipt
 
     /// <summary>Set when the source document held several receipts (§25).</summary>
     public Guid? BatchId { get; private set; }
+
+    /// <summary>
+    /// Position within the source document, 1-based. Receipts in a batch are created in the same instant,
+    /// so this — not the timestamp — is what makes "the next receipt to confirm" deterministic.
+    /// </summary>
+    public int SequenceInBatch { get; private set; } = 1;
 
     public string? Merchant { get; private set; }
 
@@ -84,18 +91,33 @@ public sealed class Receipt
 
     public bool IsTerminal => State is ReceiptState.Submitted or ReceiptState.Cancelled;
 
-    public static Receipt Create(Guid conversationId, string sourceMediaId, Guid? batchId, DateTimeOffset now)
+    public static Receipt Create(
+        Guid conversationId,
+        string sourceMediaId,
+        Guid? batchId,
+        DateTimeOffset now,
+        int sequenceInBatch = 1)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceMediaId);
+        ArgumentOutOfRangeException.ThrowIfLessThan(sequenceInBatch, 1);
 
-        var receipt = new Receipt(conversationId, sourceMediaId, batchId, now);
+        var receipt = new Receipt(conversationId, sourceMediaId, batchId, sequenceInBatch, now);
         receipt.Record("Created", ReceiptState.Received, ReceiptState.Received, "system", null, now);
         return receipt;
     }
 
+    /// <summary>
+    /// Legal from <see cref="ReceiptState.ExtractionFailed"/> as well as <see cref="ReceiptState.Received"/>,
+    /// so a Vision failure can be retried against the already-downloaded document.
+    /// </summary>
     public void BeginExtraction(DateTimeOffset now)
     {
-        Require(ReceiptState.Received, nameof(BeginExtraction));
+        if (State is not (ReceiptState.Received or ReceiptState.ExtractionFailed))
+        {
+            throw new ReceiptStateException(State, nameof(BeginExtraction));
+        }
+
+        FailureReason = null;
         Transition(ReceiptState.Extracting, "ExtractionStarted", "system", null, now);
     }
 
@@ -103,10 +125,13 @@ public sealed class Receipt
     /// Joins this receipt to a batch. Only meaningful while extraction is running, because a document is
     /// not known to hold several receipts until Vision has read it (§25).
     /// </summary>
-    public void AttachToBatch(Guid batchId, DateTimeOffset now)
+    public void AttachToBatch(Guid batchId, int sequenceInBatch, DateTimeOffset now)
     {
         Require(ReceiptState.Extracting, nameof(AttachToBatch));
+        ArgumentOutOfRangeException.ThrowIfLessThan(sequenceInBatch, 1);
+
         BatchId = batchId;
+        SequenceInBatch = sequenceInBatch;
         UpdatedAtUtc = now;
     }
 
@@ -206,30 +231,34 @@ public sealed class Receipt
         Transition(ReceiptState.SubmissionFailed, "SubmissionFailed", "system", Payload(new { reason }), now);
     }
 
-    /// <summary>True when every field the Expense API requires is present and well-formed.</summary>
+    /// <summary>
+    /// True when every field the Expense API requires is present and well-formed.
+    /// The reported name is the one a person would use — it is relayed to the user by the agent, so it
+    /// must not leak a property name.
+    /// </summary>
     public bool IsSubmittable(out string? missingField)
     {
         if (string.IsNullOrWhiteSpace(Merchant))
         {
-            missingField = nameof(Merchant);
+            missingField = "merchant";
             return false;
         }
 
         if (ReceiptDate is null)
         {
-            missingField = nameof(ReceiptDate);
+            missingField = "date";
             return false;
         }
 
         if (!Money.IsValidCurrency(Currency))
         {
-            missingField = nameof(Currency);
+            missingField = "currency";
             return false;
         }
 
         if (Amount is null or <= 0m)
         {
-            missingField = nameof(Amount);
+            missingField = "amount";
             return false;
         }
 

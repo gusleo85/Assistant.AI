@@ -20,7 +20,13 @@ public sealed class ReceiptRepository(JustinaDbContext context) : IReceiptReposi
             .ConfigureAwait(false);
 
     /// <summary>
-    /// The newest receipt that has not reached a terminal state — what "this receipt" means in conversation.
+    /// What "this receipt" means in conversation: the most recently received document that is still open,
+    /// and within it the earliest receipt still needing attention.
+    ///
+    /// Ordering by sequence after the timestamp matters. Every receipt in a batch is created in the same
+    /// instant, so the timestamp alone leaves the choice non-deterministic — a bare "yes" could land on
+    /// any member. Sequence is reading order in the document, which is also the order the user is asked
+    /// to confirm them in.
     /// </summary>
     public Task<Receipt?> GetActiveForConversationAsync(Guid conversationId, CancellationToken cancellationToken) =>
         context.Set<Receipt>()
@@ -29,6 +35,7 @@ public sealed class ReceiptRepository(JustinaDbContext context) : IReceiptReposi
                 && r.State != ReceiptState.Submitted
                 && r.State != ReceiptState.Cancelled)
             .OrderByDescending(r => r.CreatedAtUtc)
+            .ThenBy(r => r.SequenceInBatch)
             .FirstOrDefaultAsync(cancellationToken);
 
     public void Add(Receipt receipt) => context.Set<Receipt>().Add(receipt);

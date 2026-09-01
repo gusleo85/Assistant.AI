@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore Justina.slnx
+
+      # Warnings are errors, so this is also the style and nullability gate.
+      - name: Build
+        run: dotnet build Justina.slnx --no-restore --configuration Release
+
+      # Every test runs offline: no database, no network, no API keys.
+      # The document tests build real PDFs in memory; the Expense API tests use an in-process stub.
+      - name: Test
+        run: |
+          for project in tests/*/; do
+            echo "== $project"
+            dotnet test "$project" --no-build --configuration Release --nologo --verbosity quiet
+          done
+
+      - name: Check for vulnerable packages
+        run: |
+          output=$(dotnet list Justina.slnx package --vulnerable --include-transitive 2>&1)
+          echo "$output"
+          if echo "$output" | grep -q "has the following vulnerable packages"; then
+            echo "::error::Vulnerable packages found"
+            exit 1
+          fi
+
+  compose:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Validates the compose file and that every referenced variable is declared.
+      # Values are placeholders — nothing is started.
+      - name: Validate docker-compose
+        run: |
+          cp .env.example .env
+          sed -i 's/^MSSQL_SA_PASSWORD=$/MSSQL_SA_PASSWORD=Placeholder1!/' .env
+          sed -i 's/^JUSTINA_TOOL_SECRET=$/JUSTINA_TOOL_SECRET=placeholder/' .env
+          sed -i 's/^NGROK_AUTHTOKEN=$/NGROK_AUTHTOKEN=placeholder/' .env
+          docker compose config > /dev/null
+          echo "compose configuration is valid"
+
+  secrets:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # A committed .env is the most likely way a credential reaches this repository.
+      - name: Ensure no .env is committed
+        run: |
+          if git ls-files --error-unmatch .env 2>/dev/null; then
+            echo "::error::.env is tracked by git — it must never be committed"
+            exit 1
+          fi
+          echo "no .env tracked"

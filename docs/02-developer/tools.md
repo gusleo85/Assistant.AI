@@ -1,6 +1,6 @@
 # The Tool API
 
-The only surface the AI layer can act through. Seven `POST` endpoints under `/tools`, defined in
+The only surface the AI layer can act through. Eight `POST` endpoints under `/tools`, defined in
 `src/Justina.Api/Tools/ToolEndpoints.cs` and declared to agents in
 `docker/openclaw/tools/justina-tools.json`.
 
@@ -108,6 +108,15 @@ Requires `expense.submit`.
 
 Moves to `CANCELLED` and clears the active workflow. Nothing is submitted. Cancelling an already-cancelled
 receipt succeeds; cancelling a submitted one is refused.
+
+Requires `expense.submit`.
+
+### `POST /tools/expense.retry_submission`
+
+Retries a submission that failed after confirmation. Legal from `CONFIRMED`, `SUBMISSION_FAILED` or
+`SUBMITTED`; anything else is refused with `invalid_workflow_state`. The user is not asked to confirm
+again — they already did — and the idempotency key is derived from the same content, so a retry the
+Expense API already processed resolves to the same expense.
 
 Requires `expense.submit`.
 

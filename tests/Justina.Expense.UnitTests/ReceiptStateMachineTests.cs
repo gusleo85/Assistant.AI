@@ -214,10 +214,11 @@ public class ReceiptStateMachineTests
         Should.Throw<ReceiptStateException>(() => receipt.BeginSubmission(Now));
     }
 
+    /// <summary>The reported name is relayed to the user, so it must read as a field, not a property.</summary>
     [Theory]
-    [InlineData(null, "SGD", 12.50, "Merchant")]
-    [InlineData("Starbucks", null, 12.50, "Currency")]
-    [InlineData("Starbucks", "SGD", 0, "Amount")]
+    [InlineData(null, "SGD", 12.50, "merchant")]
+    [InlineData("Starbucks", null, 12.50, "currency")]
+    [InlineData("Starbucks", "SGD", 0, "amount")]
     public void IsSubmittable_reports_the_first_missing_field(
         string? merchant,
         string? currency,
@@ -257,5 +258,68 @@ public class ReceiptStateMachineTests
         new[] { first.Id, second.Id, third.Id }.Distinct().Count().ShouldBe(3);
         batch.Receipts.ShouldAllBe(r => r.BatchId == batch.Id);
         batch.Receipts.ShouldAllBe(r => r.State == ReceiptState.Received);
+    }
+
+    /// <summary>
+    /// Batch members are created in the same instant, so sequence — not the timestamp — is what makes
+    /// "the next receipt" deterministic.
+    /// </summary>
+    [Fact]
+    public void Receipts_in_a_batch_are_numbered_in_reading_order()
+    {
+        var batch = ReceiptBatch.Create(ConversationId, "media-multi", Now);
+
+        batch.AddReceipt(Now);
+        batch.AddReceipt(Now);
+        batch.AddReceipt(Now);
+
+        batch.Receipts.Select(r => r.SequenceInBatch).ShouldBe([1, 2, 3]);
+    }
+
+    [Fact]
+    public void A_single_receipt_is_sequence_one()
+    {
+        NewReceipt().SequenceInBatch.ShouldBe(1);
+    }
+
+    /// <summary>
+    /// A Vision failure must be retryable against the already-downloaded document, otherwise the user is
+    /// told to send the file again for a problem that was never theirs.
+    /// </summary>
+    [Fact]
+    public void Extraction_can_be_retried_after_it_failed()
+    {
+        var receipt = NewReceipt();
+        receipt.BeginExtraction(Now);
+        receipt.FailExtraction("vision_failed", Now);
+
+        receipt.BeginExtraction(Now);
+
+        receipt.State.ShouldBe(ReceiptState.Extracting);
+        receipt.FailureReason.ShouldBeNull();
+
+        receipt.CompleteExtraction(Extracted, [], Now);
+        receipt.State.ShouldBe(ReceiptState.WaitingConfirmation);
+    }
+
+    [Fact]
+    public void Extraction_cannot_be_retried_once_the_receipt_is_awaiting_confirmation()
+    {
+        var receipt = WaitingConfirmation();
+
+        Should.Throw<ReceiptStateException>(() => receipt.BeginExtraction(Now));
+    }
+
+    [Fact]
+    public void Attaching_to_a_batch_records_the_position_in_the_document()
+    {
+        var receipt = NewReceipt();
+        receipt.BeginExtraction(Now);
+        var batchId = Guid.NewGuid();
+
+        receipt.AttachToBatch(batchId, 2, Now);
+
+        receipt.BatchId.ShouldBe(batchId);
+        receipt.SequenceInBatch.ShouldBe(2);
     }
 }
