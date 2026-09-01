@@ -92,14 +92,7 @@ public static class JustinaMcpTools
                 "Supply the file path of the attachment the user sent."));
         }
 
-        // The identity of the document, for deduplication.
-        //
-        // The staged path wins over the message id, because the file is what must not be processed
-        // twice. The gateway replays earlier images into later turns, so the same attachment can arrive
-        // under a fresh message id; keying on the message would then create a second receipt for a
-        // photo the user sent once.
-        var dedupeKey = new[] { stagedPath, messageId, mediaId }
-            .First(value => !string.IsNullOrWhiteSpace(value))!;
+        var dedupeKey = DeduplicationKey.For(stagedPath, messageId, mediaId);
 
         var isNew = await deduplicator
             .TryRegisterAsync(context.Value.Channel, dedupeKey, cancellationToken)

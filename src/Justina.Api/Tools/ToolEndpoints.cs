@@ -82,9 +82,10 @@ public static class ToolEndpoints
                 "No media reference was supplied."));
         }
 
-        // The identity of the document, for deduplication: whichever the caller actually has.
-        var messageId = new[] { request.Envelope.MessageId, request.Media.StagedPath, request.Media.MediaId }
-            .First(value => !string.IsNullOrWhiteSpace(value))!;
+        var messageId = DeduplicationKey.For(
+            request.Media.StagedPath,
+            request.Envelope.MessageId,
+            request.Media.MediaId);
 
         var isNew = await deduplicator
             .TryRegisterAsync(context.Value.Channel, messageId, cancellationToken)

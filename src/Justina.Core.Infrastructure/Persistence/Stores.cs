@@ -8,6 +8,13 @@ using Microsoft.Extensions.Logging;
 
 namespace Justina.Core.Infrastructure.Persistence;
 
+/// <summary>The two codes SQL Server uses for "that value is already there".</summary>
+internal static class SqlServerErrors
+{
+    public const int UniqueIndexViolation = 2601;
+    public const int UniqueConstraintViolation = 2627;
+}
+
 public sealed class SystemClock : IClock
 {
     public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
@@ -19,8 +26,6 @@ public sealed class SystemClock : IClock
 /// </summary>
 public sealed class EfUnitOfWork(JustinaDbContext context, ILogger<EfUnitOfWork> logger) : IUnitOfWork
 {
-    private const int UniqueIndexViolation = 2601;
-    private const int UniqueConstraintViolation = 2627;
 
     public async Task<Result> SaveChangesAsync(CancellationToken cancellationToken)
     {
@@ -57,7 +62,7 @@ public sealed class EfUnitOfWork(JustinaDbContext context, ILogger<EfUnitOfWork>
                 "Someone else changed this at the same time. Please check the current state and try again.");
         }
         catch (DbUpdateException exception)
-            when (exception.InnerException is SqlException { Number: UniqueIndexViolation or UniqueConstraintViolation })
+            when (exception.InnerException is SqlException { Number: SqlServerErrors.UniqueIndexViolation or SqlServerErrors.UniqueConstraintViolation })
         {
             logger.LogWarning(exception, "Uniqueness violation while saving");
 
@@ -182,7 +187,10 @@ public sealed class SqlServerIdempotencyStore(JustinaDbContext context, IClock c
     }
 }
 
-public sealed class SqlServerInboundMessageDeduplicator(JustinaDbContext context, IClock clock)
+public sealed class SqlServerInboundMessageDeduplicator(
+    JustinaDbContext context,
+    IClock clock,
+    ILogger<SqlServerInboundMessageDeduplicator> logger)
     : IInboundMessageDeduplicator
 {
     public async Task<bool> TryRegisterAsync(
@@ -212,11 +220,27 @@ public sealed class SqlServerInboundMessageDeduplicator(JustinaDbContext context
             await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return true;
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException exception)
+            when (exception.InnerException is SqlException { Number: SqlServerErrors.UniqueIndexViolation or SqlServerErrors.UniqueConstraintViolation })
         {
             // The primary key rejected a concurrent duplicate: the other caller owns this message.
             context.ChangeTracker.Clear();
             return false;
+        }
+        catch (DbUpdateException exception)
+        {
+            // Anything else is a genuine failure, and reporting it as "already seen" is the worst
+            // possible answer: the caller silently drops the message and tells the user nothing is in
+            // progress. A truncated key did exactly that once. Let it surface.
+            context.ChangeTracker.Clear();
+
+            logger.LogError(
+                exception,
+                "Could not record inbound message {MessageId} on {Channel}; this is not a duplicate",
+                messageId,
+                channel);
+
+            throw;
         }
     }
 }
