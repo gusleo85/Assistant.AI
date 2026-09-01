@@ -15,13 +15,19 @@ public sealed record ReceiveReceiptResult(Guid ReceiptId, string DocumentKind, i
 
 /// <summary>
 /// Registers inbound media as a receipt in <see cref="ReceiptState.Received"/>.
-/// Downloading and validating happens here; reading the content does not — extraction is a separate,
-/// independently retryable command.
+/// Obtaining and validating the bytes happens here; reading their content does not — extraction is a
+/// separate, independently retryable command.
 /// </summary>
+/// <param name="StagedPath">
+/// Set when the AI gateway has already downloaded the attachment and staged it on a shared volume, which
+/// is what OpenClaw does for every inbound file. Takes precedence over the channel download, because in
+/// that case there is no channel media id left to fetch by.
+/// </param>
 public sealed record ReceiveReceiptCommand(
     RequestContext Context,
     MediaReference Media,
-    string MessageId) : ICommand<ReceiveReceiptResult>, IRequireCapability, IIdempotentCommand
+    string MessageId,
+    string? StagedPath = null) : ICommand<ReceiveReceiptResult>, IRequireCapability, IIdempotentCommand
 {
     public string RequiredCapability => Capabilities.ExpenseSubmit;
 
@@ -31,6 +37,7 @@ public sealed record ReceiveReceiptCommand(
 
 public sealed class ReceiveReceiptCommandHandler(
     IChannelRegistry channels,
+    IStagedMediaReader stagedMedia,
     IDocumentProcessor documentProcessor,
     IMediaStore mediaStore,
     IReceiptRepository receipts,
@@ -44,16 +51,7 @@ public sealed class ReceiveReceiptCommandHandler(
         ReceiveReceiptCommand command,
         CancellationToken cancellationToken)
     {
-        var downloader = channels.GetDownloader(command.Context.Channel);
-
-        if (downloader.IsFailure)
-        {
-            return Result.Failure<ReceiveReceiptResult>(downloader.Error);
-        }
-
-        var download = await downloader.Value
-            .DownloadAsync(command.Media, cancellationToken)
-            .ConfigureAwait(false);
+        var download = await ObtainAsync(command, cancellationToken).ConfigureAwait(false);
 
         if (download.IsFailure)
         {
@@ -122,5 +120,29 @@ public sealed class ReceiveReceiptCommandHandler(
             receipt.Id,
             processed.Value.Kind.ToString(),
             processed.Value.PageCount));
+    }
+
+    /// <summary>
+    /// Gets the bytes, from wherever they are.
+    ///
+    /// A staged path means the AI gateway already downloaded the file, so there is nothing left to fetch
+    /// from the channel — this is the normal path for OpenClaw. The channel download remains for any
+    /// caller that does hold a real media id, and neither route is trusted: both hand their bytes to the
+    /// same validation.
+    /// </summary>
+    private async Task<Result<DownloadedMedia>> ObtainAsync(
+        ReceiveReceiptCommand command,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(command.StagedPath))
+        {
+            return await stagedMedia.ReadAsync(command.StagedPath, cancellationToken).ConfigureAwait(false);
+        }
+
+        var downloader = channels.GetDownloader(command.Context.Channel);
+
+        return downloader.IsFailure
+            ? Result.Failure<DownloadedMedia>(downloader.Error)
+            : await downloader.Value.DownloadAsync(command.Media, cancellationToken).ConfigureAwait(false);
     }
 }

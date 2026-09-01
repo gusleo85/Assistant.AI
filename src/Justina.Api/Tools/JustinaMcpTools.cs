@@ -55,9 +55,11 @@ public static class JustinaMcpTools
 
     [McpServerTool(Name = "justina_expense_receive_media", Destructive = false, Idempotent = true, OpenWorld = true)]
     [Description(
-        "Register an image or PDF the user sent as a receipt and read it. Returns one or more extracted "
-        + "receipts awaiting the user's confirmation. Never submits anything. If receiptCount is greater "
-        + "than 1, ask the user before processing.")]
+        "Register an image or PDF the user sent as a receipt and read it. Pass stagedPath — the local file "
+        + "path of the attachment the user just sent. Returns one or more extracted receipts awaiting the "
+        + "user's confirmation. Never submits anything. If receiptCount is greater than 1, ask the user "
+        + "before processing. Do not describe the receipt from the image yourself: report only the values "
+        + "this tool returns.")]
     public static async Task<string> ReceiveMediaAsync(
         RequestContextFactory contexts,
         IDispatcher dispatcher,
@@ -65,10 +67,14 @@ public static class JustinaMcpTools
         [Description("Channel the message arrived on: telegram or whatsapp.")] string channel,
         [Description("The channel's own numeric user id for the person speaking.")] string userId,
         [Description("The channel's own chat/conversation id.")] string conversationId,
-        [Description("The channel's identifier for the file the user sent.")] string mediaId,
-        [Description("The file's declared MIME type, for example image/jpeg or application/pdf.")] string mimeType,
         CancellationToken cancellationToken,
-        [Description("The file name, if the channel supplied one.")] string? fileName = null,
+        [Description(
+            "The local file path of the attachment the user sent, exactly as given to you — typically "
+            + "under media/inbound/. This is the normal way to pass a file.")]
+        string? stagedPath = null,
+        [Description("A channel media id, only if you were given one instead of a path.")] string? mediaId = null,
+        [Description("The file's declared MIME type, for example image/jpeg or application/pdf.")] string? mimeType = null,
+        [Description("The file name, if one was supplied.")] string? fileName = null,
         [Description("The channel's id for this message, used to ignore retries.")] string? messageId = null)
     {
         var envelope = Envelope(channel, userId, conversationId, messageId);
@@ -79,7 +85,16 @@ public static class JustinaMcpTools
             return Serialize(Result.Failure<ReceiptExtractionOutcome>(context.Error));
         }
 
-        var dedupeKey = string.IsNullOrWhiteSpace(messageId) ? mediaId : messageId;
+        if (string.IsNullOrWhiteSpace(stagedPath) && string.IsNullOrWhiteSpace(mediaId))
+        {
+            return Serialize(Result.Failure<ReceiptExtractionOutcome>(
+                ErrorCodes.Validation,
+                "Supply the file path of the attachment the user sent."));
+        }
+
+        // The identity of the document, for deduplication: whichever of the three the caller actually has.
+        var dedupeKey = new[] { messageId, stagedPath, mediaId }
+            .First(value => !string.IsNullOrWhiteSpace(value))!;
 
         var isNew = await deduplicator
             .TryRegisterAsync(context.Value.Channel, dedupeKey, cancellationToken)
@@ -95,10 +110,16 @@ public static class JustinaMcpTools
             return Serialize(existing);
         }
 
-        var media = new MediaReference(mediaId, mimeType, fileName, 0);
+        // MediaId doubles as the media store key, so it must be stable for this document even when the
+        // gateway gave us a path rather than a channel id.
+        var media = new MediaReference(
+            mediaId ?? dedupeKey,
+            mimeType ?? "application/octet-stream",
+            fileName,
+            0);
 
         var received = await dispatcher
-            .SendAsync(new ReceiveReceiptCommand(context.Value, media, dedupeKey), cancellationToken)
+            .SendAsync(new ReceiveReceiptCommand(context.Value, media, dedupeKey, stagedPath), cancellationToken)
             .ConfigureAwait(false);
 
         if (received.IsFailure)

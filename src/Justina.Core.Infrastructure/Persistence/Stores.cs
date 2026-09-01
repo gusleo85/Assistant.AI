@@ -31,6 +31,25 @@ public sealed class EfUnitOfWork(JustinaDbContext context, ILogger<EfUnitOfWork>
         }
         catch (DbUpdateConcurrencyException exception)
         {
+            // Name the entities and their concurrency tokens. "0 rows affected" has two very different
+            // causes — a genuine concurrent write, or a token the provider never populated after insert —
+            // and without this the log cannot tell them apart.
+            foreach (var entry in exception.Entries)
+            {
+                var token = entry.Metadata
+                    .GetProperties()
+                    .FirstOrDefault(p => p.IsConcurrencyToken);
+
+                var value = token is null ? null : entry.CurrentValues[token];
+
+                logger.LogWarning(
+                    "Concurrency conflict on {EntityType} (state {EntityState}); token {TokenName} = {TokenValue}",
+                    entry.Metadata.Name,
+                    entry.State,
+                    token?.Name ?? "(none)",
+                    value is byte[] bytes ? Convert.ToHexStringLower(bytes) : value?.ToString() ?? "(null)");
+            }
+
             logger.LogWarning(exception, "Optimistic concurrency conflict while saving");
 
             return Result.Failure(

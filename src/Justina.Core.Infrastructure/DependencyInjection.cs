@@ -31,6 +31,7 @@ public static class CoreInfrastructureServiceCollectionExtensions
     {
         services.Configure<DocumentProcessingOptions>(configuration.GetSection(DocumentProcessingOptions.SectionName));
         services.Configure<MediaStoreOptions>(configuration.GetSection(MediaStoreOptions.SectionName));
+        services.Configure<StagedMediaOptions>(configuration.GetSection(StagedMediaOptions.SectionName));
         services.Configure<OpenAiVisionOptions>(configuration.GetSection(OpenAiVisionOptions.SectionName));
         services.Configure<TelegramOptions>(configuration.GetSection(TelegramOptions.SectionName));
         services.Configure<WhatsAppOptions>(configuration.GetSection(WhatsAppOptions.SectionName));
@@ -55,6 +56,7 @@ public static class CoreInfrastructureServiceCollectionExtensions
         services.AddScoped<PrincipalSeeder>();
 
         services.AddSingleton<IMediaStore, FileSystemMediaStore>();
+        services.AddSingleton<IStagedMediaReader, StagedMediaReader>();
         services.AddSingleton<IPdfPageRenderer, PdfiumPageRenderer>();
         services.AddScoped<IDocumentProcessor, DocumentProcessor>();
 

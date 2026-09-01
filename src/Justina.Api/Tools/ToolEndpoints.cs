@@ -74,16 +74,17 @@ public static class ToolEndpoints
             return Respond(Result.Failure<ReceiptExtractionOutcome>(context.Error));
         }
 
-        if (request.Media is null || string.IsNullOrWhiteSpace(request.Media.MediaId))
+        if (request.Media is null
+            || (string.IsNullOrWhiteSpace(request.Media.MediaId) && string.IsNullOrWhiteSpace(request.Media.StagedPath)))
         {
             return Respond(Result.Failure<ReceiptExtractionOutcome>(
                 ErrorCodes.Validation,
                 "No media reference was supplied."));
         }
 
-        var messageId = string.IsNullOrWhiteSpace(request.Envelope.MessageId)
-            ? request.Media.MediaId
-            : request.Envelope.MessageId;
+        // The identity of the document, for deduplication: whichever the caller actually has.
+        var messageId = new[] { request.Envelope.MessageId, request.Media.StagedPath, request.Media.MediaId }
+            .First(value => !string.IsNullOrWhiteSpace(value))!;
 
         var isNew = await deduplicator
             .TryRegisterAsync(context.Value.Channel, messageId, cancellationToken)
@@ -101,13 +102,15 @@ public static class ToolEndpoints
         }
 
         var media = new MediaReference(
-            request.Media.MediaId,
-            request.Media.MimeType,
+            request.Media.MediaId ?? messageId,
+            request.Media.MimeType ?? "application/octet-stream",
             request.Media.FileName,
             request.Media.SizeBytes);
 
         var received = await dispatcher
-            .SendAsync(new ReceiveReceiptCommand(context.Value, media, messageId), cancellationToken)
+            .SendAsync(
+                new ReceiveReceiptCommand(context.Value, media, messageId, request.Media.StagedPath),
+                cancellationToken)
             .ConfigureAwait(false);
 
         if (received.IsFailure)

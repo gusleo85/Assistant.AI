@@ -32,7 +32,12 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Media is untrusted user content: it lives on its own volume, outside anything the app serves.
-RUN mkdir -p /var/justina/media && chown -R app:app /var/justina
+#
+# Owned by uid 1000 rather than the image's own `app` user (1654) because the container runs as 1000 —
+# see the `user:` setting in docker-compose.yml. The AI gateway stages inbound attachments with
+# owner-only permissions as uid 1000, and matching it is the only way to read them without loosening
+# those permissions or running as root.
+RUN mkdir -p /var/justina/media && chown -R 1000:1000 /var/justina
 
 COPY --from=build /app/publish .
 
@@ -40,6 +45,8 @@ ENV ASPNETCORE_URLS=http://+:8080 \
     DOTNET_ENVIRONMENT=Production
 
 EXPOSE 8080
-USER app
+# Non-root. The uid matches the AI gateway's, so staged attachments (written owner-only) are
+# readable without weakening their permissions. See docker-compose.yml.
+USER 1000:1000
 
 ENTRYPOINT ["dotnet", "Justina.Api.dll"]

@@ -17,6 +17,12 @@ public sealed class ExpenseModelConfiguration : IModelConfiguration
             entity.ToTable("Receipts");
             entity.HasKey(e => e.Id);
 
+            // The aggregate generates its own identity in the constructor. Without this, EF's
+            // default for Guid keys (ValueGeneratedOnAdd) reads a non-empty key as "this row
+            // already exists" and issues an UPDATE for a row that was never inserted — which
+            // surfaces as a bogus concurrency conflict on the first save.
+            entity.Property(e => e.Id).ValueGeneratedNever();
+
             entity.Property(e => e.State).HasConversion<int>();
 
             // Native rowversion: a losing concurrent confirmation raises DbUpdateConcurrencyException,
@@ -75,6 +81,12 @@ public sealed class ExpenseModelConfiguration : IModelConfiguration
         {
             entity.ToTable("ReceiptLineItems");
             entity.HasKey(e => e.Id);
+
+            // The aggregate generates its own identity in the constructor. Without this, EF's
+            // default for Guid keys (ValueGeneratedOnAdd) reads a non-empty key as "this row
+            // already exists" and issues an UPDATE for a row that was never inserted — which
+            // surfaces as a bogus concurrency conflict on the first save.
+            entity.Property(e => e.Id).ValueGeneratedNever();
             entity.Property(e => e.Description).HasMaxLength(512).IsRequired();
             entity.Property(e => e.Quantity).HasColumnType("decimal(18,4)");
             entity.Property(e => e.UnitPrice).HasColumnType("decimal(18,2)");
@@ -99,6 +111,12 @@ public sealed class ExpenseModelConfiguration : IModelConfiguration
         {
             entity.ToTable("ReceiptBatches");
             entity.HasKey(e => e.Id);
+
+            // The aggregate generates its own identity in the constructor. Without this, EF's
+            // default for Guid keys (ValueGeneratedOnAdd) reads a non-empty key as "this row
+            // already exists" and issues an UPDATE for a row that was never inserted — which
+            // surfaces as a bogus concurrency conflict on the first save.
+            entity.Property(e => e.Id).ValueGeneratedNever();
             entity.Property(e => e.SourceMediaId).HasMaxLength(256).IsRequired();
             entity.Property(e => e.CreatedAtUtc).HasColumnType("datetime2");
             entity.Ignore(e => e.Receipts);

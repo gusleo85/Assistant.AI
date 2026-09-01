@@ -14,7 +14,16 @@ public sealed record ToolEnvelope(
     string? MessageId = null,
     string? CorrelationId = null);
 
-public sealed record MediaDto(string MediaId, string MimeType, string? FileName, long SizeBytes);
+/// <summary>
+/// Where the file is. <c>StagedPath</c> is the normal case — the AI gateway downloads inbound
+/// attachments before the agent runs, so there is no channel media id left to fetch by.
+/// </summary>
+public sealed record MediaDto(
+    string? MediaId = null,
+    string? MimeType = null,
+    string? FileName = null,
+    long SizeBytes = 0,
+    string? StagedPath = null);
 
 public sealed record SessionContextRequest(ToolEnvelope Envelope);
 
