@@ -69,6 +69,13 @@ public sealed class Receipt
 
     public string? Currency { get; private set; }
 
+    /// <summary>
+    /// The Expense API's identifier for <see cref="Currency"/>, resolved from the company's currency
+    /// list. Null when the code is not one the company claims in — the code is still kept, so the user
+    /// can be told which currency was read rather than being shown nothing.
+    /// </summary>
+    public Guid? CurrencyId { get; private set; }
+
     public decimal? Amount { get; private set; }
 
     public string? Category { get; private set; }
@@ -285,6 +292,7 @@ public sealed class Receipt
         Merchant = fields.Merchant;
         ReceiptDate = fields.Date;
         Currency = fields.Currency?.ToUpperInvariant();
+        CurrencyId = fields.CurrencyId;
         Amount = fields.Amount is { } amount ? decimal.Round(amount, 2, MidpointRounding.ToEven) : null;
         Category = fields.Category;
         CategoryId = fields.CategoryId;
@@ -305,6 +313,9 @@ public sealed class Receipt
     /// how a name that matched nothing is recorded — it must never keep the previous category's id.
     /// </summary>
     public void ResolveCategory(Guid? categoryId) => CategoryId = categoryId;
+
+    /// <summary>Re-attaches a currency identifier after the code was edited by hand.</summary>
+    public void ResolveCurrency(Guid? currencyId) => CurrencyId = currencyId;
 
     private void Apply(ReceiptFieldChange change)
     {
@@ -328,6 +339,10 @@ public sealed class Receipt
                 }
 
                 Currency = currency;
+
+                // Same rule as the category: the new code has not been checked against the company's
+                // currency list, and keeping the old id would name a different currency than the code.
+                CurrencyId = null;
                 break;
 
             case ReceiptField.Amount:

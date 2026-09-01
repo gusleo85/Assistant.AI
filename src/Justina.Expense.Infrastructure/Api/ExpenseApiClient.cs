@@ -21,6 +21,13 @@ public enum ExpenseApiMode
     /// </summary>
     Stub = 0,
 
+    /// <summary>
+    /// Speaks HTTP to a stand-in that serves the Expense contract — the mock in Justina.Api. Unlike
+    /// Stub, the request really is built, serialized, authenticated and parsed, so the wiring is
+    /// exercised end to end without touching the real system.
+    /// </summary>
+    Mock = 2,
+
     /// <summary>The real Expense API.</summary>
     Live = 1,
 }
@@ -65,6 +72,14 @@ public sealed class ExpenseApiOptions
     public string CategoriesPath { get; set; } = "expense/v1/Categories/list/{0}";
 
     public string TaxesPath { get; set; } = "expense/v1/Taxes/list/{0}";
+
+    public string CurrenciesPath { get; set; } = "expense/v1/Currencies/list/{0}";
+
+    /// <summary>
+    /// Creates a receipt captured in a chat. Does not exist in the Expense system yet — the mock in
+    /// Justina.Api serves this shape so the whole path can be exercised before the real one lands.
+    /// </summary>
+    public string ChatScanPath { get; set; } = "expense/v1/Receipt/chat/scan";
 
     /// <summary>
     /// How long a company's catalogue is reused. The Lambda re-reads it per event because it is
@@ -248,6 +263,7 @@ public sealed class ExpenseApiClient(
             ["merchant"] = submission.Merchant,
             ["date"] = submission.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             ["currency"] = submission.Currency,
+            ["currencyId"] = submission.CurrencyId,
             ["amount"] = submission.Amount,
             ["category"] = submission.Category,
             ["categoryId"] = submission.CategoryId,

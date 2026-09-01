@@ -23,7 +23,12 @@ public class ReceiptCatalogueResolutionTests
         [
             new ExpenseTax(GstNineId, "GST", 9.00m, "GST (9.00%)"),
             new ExpenseTax(GstSevenId, "GST", 7.00m, "GST (7.00%)"),
+        ],
+        [
+            new ExpenseCurrency(SgdId, "SGD", "Singapore Dollar", 1m),
         ]);
+
+    private static readonly Guid SgdId = Guid.Parse("2ed20622-fc20-4d4d-8832-9b6e687cc087");
 
     private static RawReceipt Raw(string? category, params string[] taxes) =>
         new(

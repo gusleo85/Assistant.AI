@@ -33,6 +33,7 @@ public sealed class ExpenseModelConfiguration : IModelConfiguration
             entity.Property(e => e.Merchant).HasMaxLength(256);
             entity.Property(e => e.ReceiptDate).HasColumnType("date");
             entity.Property(e => e.Currency).HasColumnType("char(3)");
+            entity.Property(e => e.CurrencyId);
             entity.Property(e => e.Amount).HasColumnType("decimal(18,2)");
             entity.Property(e => e.Category).HasMaxLength(64);
             entity.Property(e => e.CategoryId);

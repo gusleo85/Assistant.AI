@@ -30,6 +30,10 @@ public sealed record ExpenseListItem
 
     [JsonPropertyName("isDefault")]
     public bool IsDefault { get; init; }
+
+    /// <summary>Present only on currencies; the rate against the organization's base currency.</summary>
+    [JsonPropertyName("exchangeRate")]
+    public decimal ExchangeRate { get; init; }
 }
 
 /// <summary>
@@ -45,6 +49,7 @@ public sealed class StubExpenseCatalogue(ILogger<StubExpenseCatalogue> logger) :
 {
     private const string CategoriesResource = "Justina.Expense.Infrastructure.MockData.categories.json";
     private const string TaxesResource = "Justina.Expense.Infrastructure.MockData.taxes.json";
+    private const string CurrenciesResource = "Justina.Expense.Infrastructure.MockData.currencies.json";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -57,10 +62,11 @@ public sealed class StubExpenseCatalogue(ILogger<StubExpenseCatalogue> logger) :
         var catalogue = Catalogue.Value;
 
         logger.LogWarning(
-            "STUB catalogue: {CategoryCount} categories and {TaxCount} taxes for organization " +
-            "{OrganizationId} come from embedded mock data, not from the Expense API",
+            "STUB catalogue: {CategoryCount} categories, {TaxCount} taxes and {CurrencyCount} currencies " +
+            "for organization {OrganizationId} come from embedded mock data, not from the Expense API",
             catalogue.Categories.Count,
             catalogue.Taxes.Count,
+            catalogue.Currencies.Count,
             tenant.OrganizationId);
 
         return Task.FromResult(catalogue);
@@ -92,7 +98,16 @@ public sealed class StubExpenseCatalogue(ILogger<StubExpenseCatalogue> logger) :
             })
             .ToList();
 
-        return new ExpenseCatalogue(categories, taxes);
+        // On a currency row the API puts the ISO code in "name" and the full name in "attribute".
+        var currencies = Read(CurrenciesResource)
+            .Select(item => new ExpenseCurrency(
+                item.Id,
+                item.Name,
+                item.Attribute ?? item.Name,
+                item.ExchangeRate))
+            .ToList();
+
+        return new ExpenseCatalogue(categories, taxes, currencies);
     }
 
     private static IReadOnlyList<ExpenseListItem> Read(string resourceName)

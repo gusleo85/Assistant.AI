@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Justina.Core.Application.Abstractions;
+using Justina.Core.Application.Messaging;
 using Justina.Core.Domain.Observability;
 using Justina.Core.Domain.Results;
 using Justina.Expense.Application.Abstractions;
@@ -18,13 +19,13 @@ public interface IReceiptSubmissionService
 {
     Task<Result<ReceiptSnapshot>> SubmitAsync(
         Receipt receipt,
-        string submittedByUserId,
-        CorrelationId correlationId,
+        RequestContext context,
         CancellationToken cancellationToken);
 }
 
 public sealed class ReceiptSubmissionService(
     IExpenseApiClient expenseApi,
+    IExpenseTenantResolver tenants,
     IUnitOfWork unitOfWork,
     IClock clock,
     ILogger<ReceiptSubmissionService> logger)
@@ -32,8 +33,7 @@ public sealed class ReceiptSubmissionService(
 {
     public async Task<Result<ReceiptSnapshot>> SubmitAsync(
         Receipt receipt,
-        string submittedByUserId,
-        CorrelationId correlationId,
+        RequestContext context,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(receipt);
@@ -51,6 +51,20 @@ public sealed class ReceiptSubmissionService(
                 $"This receipt is missing {missingField} and cannot be submitted yet.");
         }
 
+        // Resolved before the state moves, so a tenant that cannot be resolved leaves the receipt
+        // confirmed and retryable rather than stuck in SUBMITTING.
+        var tenant = await tenants.ResolveAsync(context, cancellationToken).ConfigureAwait(false);
+
+        if (tenant.IsFailure)
+        {
+            logger.LogWarning(
+                "Could not resolve the expense tenant for receipt {ReceiptId}: {ErrorCode}",
+                receipt.Id,
+                tenant.Error.Code);
+
+            return Result.Failure<ReceiptSnapshot>(tenant.Error);
+        }
+
         receipt.BeginSubmission(clock.UtcNow);
 
         // Persist SUBMITTING before the external call so a crash mid-flight leaves a retryable state,
@@ -62,7 +76,7 @@ public sealed class ReceiptSubmissionService(
             return Result.Failure<ReceiptSnapshot>(checkpoint.Error);
         }
 
-        var submission = BuildSubmission(receipt, submittedByUserId, correlationId);
+        var submission = BuildSubmission(receipt, context, tenant.Value);
         var response = await expenseApi.SubmitAsync(submission, cancellationToken).ConfigureAwait(false);
 
         if (response.IsSuccess)
@@ -96,8 +110,8 @@ public sealed class ReceiptSubmissionService(
 
     private static ExpenseSubmission BuildSubmission(
         Receipt receipt,
-        string submittedByUserId,
-        CorrelationId correlationId) =>
+        RequestContext context,
+        ExpenseTenant tenant) =>
         new(
             receipt.Merchant!,
             receipt.ReceiptDate!.Value,
@@ -109,12 +123,14 @@ public sealed class ReceiptSubmissionService(
             receipt.LineItems
                 .Select(i => new ExpenseLineItem(i.Description, i.Quantity, i.UnitPrice, i.Amount))
                 .ToList(),
-            submittedByUserId,
+            context.User.UserId,
             BuildIdempotencyKey(receipt),
-            correlationId,
+            context.CorrelationId,
             receipt.CategoryId,
             receipt.TaxIds,
-            receipt.Location);
+            receipt.Location,
+            receipt.CurrencyId,
+            tenant);
 
     /// <summary>
     /// Deterministic from the receipt identity and its confirmed content, so a retry of the same

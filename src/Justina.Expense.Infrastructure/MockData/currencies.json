@@ -1,0 +1,362 @@
+[
+    {
+        "exchangeRate": 0.346700486,
+        "id": "51cfca3b-e9b1-433e-bfd8-2476ddd7fd2f",
+        "name": "AED",
+        "attribute": "United Arab Emirates Dirham",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.910509649,
+        "id": "f1f4f8f6-e355-4aad-a67f-49481267bf6b",
+        "name": "AUD",
+        "attribute": "Australia Dollar",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.010369505,
+        "id": "dd5e7318-e410-441c-ac99-23e0c0e50227",
+        "name": "BDT",
+        "attribute": "Bangladeshi Taka",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 3.378093066,
+        "id": "f685f391-0e50-4056-a372-f0d25c2cc6f3",
+        "name": "BHD",
+        "attribute": "Bahraini Dinar",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 1.001093194,
+        "id": "ff93b2de-ae9c-4c85-9d21-e9e9e995575b",
+        "name": "BND",
+        "attribute": "Brunei Dollar",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.245470878,
+        "id": "3910b5eb-5540-455b-aabf-6452501d41ac",
+        "name": "BRL",
+        "attribute": "Brazilian Real",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.917789889,
+        "id": "89efe822-993d-4568-acfa-14cd41afcb2d",
+        "name": "CAD",
+        "attribute": "Canada Dollar",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 1.571054885,
+        "id": "7befbb16-87d9-4d5b-8c3c-da14594185e9",
+        "name": "CHF",
+        "attribute": "Switzerland Franc",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.189439003,
+        "id": "33dda51d-780e-4fc5-9c0d-9d0ce39397a5",
+        "name": "CNY",
+        "attribute": "China Yuan Renminbi",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.025000393,
+        "id": "4928ce35-998e-4cbc-a101-0ad9bf142e98",
+        "name": "EGP",
+        "attribute": "Egyptian Pound",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 1.475973368,
+        "id": "dc49fcf9-9240-4c61-91ac-d0a269d0f9c5",
+        "name": "EUR",
+        "attribute": "Euro Member Countries",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 1.7233149,
+        "id": "3fca2490-52d6-4612-aa4e-265c558a0ea8",
+        "name": "GBP",
+        "attribute": "United Kingdom Pound",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.162399089,
+        "id": "2280dc1d-2a24-4de2-8d0d-f0e0a4f33bfa",
+        "name": "HKD",
+        "attribute": "Hong Kong Dollar",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.004032014,
+        "id": "4020e15b-3d11-413c-bf3b-08676535bd33",
+        "name": "HUF",
+        "attribute": "Hungarian Forint",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 7.173E-05,
+        "id": "0688d620-011d-478e-ac42-16ff5a42a9ef",
+        "name": "IDR",
+        "attribute": "Indonesia Rupiah",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.013411182,
+        "id": "5fa3b125-19c4-46c5-ac9a-e72e03bd153f",
+        "name": "INR",
+        "attribute": "India Rupee",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 1.795851225,
+        "id": "ab7f618c-8618-4a90-a473-52508de8e445",
+        "name": "JOD",
+        "attribute": "Jordanian Dinar",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.007958362,
+        "id": "d4ca9607-9878-44fb-95fa-95255aacc709",
+        "name": "JPY",
+        "attribute": "Japan Yen",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.000313922,
+        "id": "a17472ff-8e3b-4a68-92eb-49ab926de0da",
+        "name": "KHR",
+        "attribute": "Cambodian Riel",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.000926878,
+        "id": "a699b1ad-ac11-416f-b87b-46b41938bc24",
+        "name": "KRW",
+        "attribute": "Korea (South) Won",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 4.118344755,
+        "id": "1d6940f7-8480-4efa-9ee3-f63cdd7663b7",
+        "name": "KWD",
+        "attribute": "Kuwaiti Dinar",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.003882421,
+        "id": "2a672bb7-5379-4c8e-883d-6966eb2f8464",
+        "name": "LKR",
+        "attribute": "Sri Lankan Rupee",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.000606457,
+        "id": "644b8128-2d7c-419c-b5c0-4cbd432a529b",
+        "name": "MMK",
+        "attribute": "Myanmar Kyat",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.074826782,
+        "id": "22fb4485-b7aa-4caf-bd1a-1f53b2dd80ac",
+        "name": "MXN",
+        "attribute": "Mexican Peso",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.315342318,
+        "id": "d8e2479f-def4-485b-b3e7-1f2443ae6e34",
+        "name": "MYR",
+        "attribute": "Malaysia Ringgit",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.078982029,
+        "id": "14011dc0-c885-40ba-a7a0-7f03766757c9",
+        "name": "NAD",
+        "attribute": "Namibian Dollar",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.000952047,
+        "id": "952e4bd9-fd53-4861-8511-9841c3af4f32",
+        "name": "NGN",
+        "attribute": "Nigerian Dollar",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.751276983,
+        "id": "52413d79-c648-4d86-897e-dba8d623fcd5",
+        "name": "NZD",
+        "attribute": "New Zealand Dollar",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 3.311477581,
+        "id": "315b721a-f3af-4049-a329-2ddac15aec4e",
+        "name": "OMR",
+        "attribute": "Omani Riyal",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.020378478,
+        "id": "be11ac8d-2ad4-4683-a323-ac3111d0beab",
+        "name": "PHP",
+        "attribute": "Philippines Peso",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.004586662,
+        "id": "c4914a19-8f0a-4b8e-8971-871741cb8a17",
+        "name": "PKR",
+        "attribute": "Pakistan Rupees",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.348645616,
+        "id": "e08e0f64-d56c-4fa6-a5e8-b25510c2ac60",
+        "name": "QAR",
+        "attribute": "Qatar Riyal",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.3374656,
+        "id": "634bc678-a2d8-4a77-9f37-944e77cdd73d",
+        "name": "SAR",
+        "attribute": "Saudi Arabia Riyal",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 1,
+        "id": "2ed20622-fc20-4d4d-8832-9b6e687cc087",
+        "name": "SGD",
+        "attribute": "Singapore Dollar",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.038282138,
+        "id": "4f0b7e02-2c6f-46fb-88db-2b2e6f53c9cd",
+        "name": "THB",
+        "attribute": "Thailand Baht",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.026374213,
+        "id": "3d3d82a4-c05a-4d81-9073-59d8f4b5aafb",
+        "name": "TRY",
+        "attribute": "Turkish Lira",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.040176876,
+        "id": "f33770b0-a004-465f-b336-a1b740951e41",
+        "name": "TWD",
+        "attribute": "Taiwan New Dollar",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 1.273257642,
+        "id": "c7c086de-869d-4434-a51e-b038a3d747b3",
+        "name": "USD",
+        "attribute": "United States Dollar",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 4.8835E-05,
+        "id": "6bdc03d9-9a73-46b1-8a65-766af967c50c",
+        "name": "VND",
+        "attribute": "Viet Nam Dong",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    },
+    {
+        "exchangeRate": 0.078710068,
+        "id": "29ab5a20-520f-4494-9d7b-0c0a10bdac4d",
+        "name": "ZAR",
+        "attribute": "South African Rand",
+        "description": "",
+        "isDefault": false,
+        "claimSeparately": false
+    }
+]

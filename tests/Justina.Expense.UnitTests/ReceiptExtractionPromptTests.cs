@@ -9,7 +9,8 @@ public class ReceiptExtractionPromptTests
     private static ExpenseCatalogue Catalogue(params string[] categoryNames) =>
         new(
             categoryNames.Select((name, index) => new ExpenseCategory(Guid.NewGuid(), name)).ToList(),
-            [new ExpenseTax(Guid.NewGuid(), "GST", 9.00m, "GST (9.00%)")]);
+            [new ExpenseTax(Guid.NewGuid(), "GST", 9.00m, "GST (9.00%)")],
+            [new ExpenseCurrency(Guid.NewGuid(), "SGD", "Singapore Dollar", 1m)]);
 
     [Fact]
     public void An_empty_catalogue_leaves_the_instruction_byte_identical()

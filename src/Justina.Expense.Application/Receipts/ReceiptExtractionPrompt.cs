@@ -28,6 +28,9 @@ public static class ReceiptExtractionPrompt
 
     internal const int MaxTaxes = 50;
 
+    /// <summary>ISO-4217 has 180 codes; a company claiming in more than that is not a real catalogue.</summary>
+    internal const int MaxCurrencies = 180;
+
     /// <summary>Long enough for any real category name; short enough that no single entry can dominate.</summary>
     internal const int MaxEntryLength = 80;
 
@@ -44,13 +47,40 @@ public static class ReceiptExtractionPrompt
 
         var categories = Sanitize(catalogue.Categories.Select(category => category.Name), MaxCategories);
         var taxes = Sanitize(catalogue.Taxes.Select(tax => tax.Label), MaxTaxes);
+        var currencies = Sanitize(catalogue.Currencies.Select(currency => currency.Code), MaxCurrencies);
 
-        if (categories.Count == 0 && taxes.Count == 0)
+        if (categories.Count == 0 && taxes.Count == 0 && currencies.Count == 0)
         {
             return ReceiptExtractionSchema.Instruction;
         }
 
         var builder = new StringBuilder(ReceiptExtractionSchema.Instruction);
+
+        if (currencies.Count > 0)
+        {
+            // The base instruction asks for the ISO code "if shown or unambiguous", which leaves every
+            // receipt that prints a bare symbol or none at all with no currency — and a receipt with no
+            // currency cannot be submitted. This is the resolution order the Lambda uses, kept in the
+            // same sequence: explicit beats inferred, and nothing ever defaults to USD.
+            builder
+                .AppendLine()
+                .AppendLine()
+                .AppendLine("Currency must be one of the following ISO-4217 codes, or null:")
+                .AppendLine(string.Join(", ", currencies))
+                .AppendLine(
+                    "Work through these in order and stop at the first that resolves. " +
+                    "1) An ISO code printed on the receipt. " +
+                    "2) A symbol that belongs to exactly one currency: S$ is SGD, RM is MYR, HK$ is HKD, " +
+                    "US$ is USD, Rp is IDR, and a bare $ is ambiguous — do not treat it as USD, carry on. " +
+                    "3) A tax line that implies a country: GST with a Singapore address is SGD, SST or " +
+                    "service tax in Malaysia is MYR, VAT in the eurozone is EUR, GST in Australia is AUD. " +
+                    "4) The country of the merchant's address. " +
+                    "5) A telephone dialling code: +65 SGD, +60 MYR, +62 IDR, +852 HKD, +61 AUD, +66 THB, " +
+                    "+63 PHP, +84 VND, +91 INR, +81 JPY, +82 KRW, +95 MMK, +44 GBP, +1 USD. " +
+                    "6) A script used by only one country: Burmese is MMK, Thai is THB, Khmer is KHR, " +
+                    "Hangul is KRW. Skip scripts shared by many countries, such as Latin or Arabic. " +
+                    "7) If none of these resolves it, return null. Never guess, and never default to USD.");
+        }
 
         if (categories.Count > 0)
         {

@@ -16,6 +16,7 @@
     <EmbeddedResource Include="MockData\channel-links.json" />
     <EmbeddedResource Include="MockData\categories.json" />
     <EmbeddedResource Include="MockData\taxes.json" />
+    <EmbeddedResource Include="MockData\currencies.json" />
     <EmbeddedResource Include="MockData\organization.json" />
   </ItemGroup>
 

@@ -37,6 +37,9 @@ public static class ReceiptNormalizer
         var category = Text(raw.Category);
         var categoryId = catalogue?.FindCategory(category)?.Id;
 
+        var currency = Currency(raw.Currency);
+        var currencyId = catalogue?.FindCurrency(currency)?.Id;
+
         var taxIds = (raw.Taxes ?? [])
             .Select(label => catalogue?.FindTax(Text(label))?.Id)
             .Where(id => id is not null)
@@ -47,13 +50,14 @@ public static class ReceiptNormalizer
         var fields = new ReceiptFields(
             Merchant: Text(raw.Merchant),
             Date: Date(raw.Date),
-            Currency: Currency(raw.Currency),
+            Currency: currency,
             Amount: PositiveAmount(raw.Amount),
             Category: category,
             ReceiptNumber: Text(raw.ReceiptNumber),
             TaxAmount: NonNegativeAmount(raw.TaxAmount),
             CategoryId: categoryId,
-            TaxIds: taxIds);
+            TaxIds: taxIds,
+            CurrencyId: currencyId);
 
         var lineItems = (raw.LineItems ?? [])
             .Select(LineItem)

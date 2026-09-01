@@ -60,4 +60,5 @@ public sealed record ReceiptFields(
     decimal? TaxAmount,
     Guid? CategoryId = null,
     IReadOnlyList<Guid>? TaxIds = null,
-    string? Location = null);
+    string? Location = null,
+    Guid? CurrencyId = null);

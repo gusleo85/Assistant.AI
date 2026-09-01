@@ -35,15 +35,20 @@ public sealed class ExpenseCatalogueClient(
 
         var categories = await ReadAsync(_options.CategoriesPath, tenant, cancellationToken).ConfigureAwait(false);
         var taxes = await ReadAsync(_options.TaxesPath, tenant, cancellationToken).ConfigureAwait(false);
+        var currencies = await ReadAsync(_options.CurrenciesPath, tenant, cancellationToken).ConfigureAwait(false);
 
-        if (categories.Count == 0 && taxes.Count == 0)
+        if (categories.Count == 0 && taxes.Count == 0 && currencies.Count == 0)
         {
             return ExpenseCatalogue.Empty;
         }
 
         return new ExpenseCatalogue(
             categories.Select(item => new ExpenseCategory(item.Id, item.Name)).ToList(),
-            taxes.Select(ToTax).ToList());
+            taxes.Select(ToTax).ToList(),
+            // On a currency row the API puts the ISO code in "name" and the full name in "attribute".
+            currencies
+                .Select(item => new ExpenseCurrency(item.Id, item.Name, item.Attribute ?? item.Name, item.ExchangeRate))
+                .ToList());
     }
 
     /// <summary>

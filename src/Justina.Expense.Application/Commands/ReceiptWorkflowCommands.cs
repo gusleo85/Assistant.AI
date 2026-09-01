@@ -138,7 +138,7 @@ public sealed class ConfirmReceiptCommandHandler(
         }
 
         var result = await submission
-            .SubmitAsync(receipt, command.Context.User.UserId, command.Context.CorrelationId, cancellationToken)
+            .SubmitAsync(receipt, command.Context, cancellationToken)
             .ConfigureAwait(false);
 
         if (result.IsSuccess)
@@ -259,7 +259,7 @@ public sealed class SubmitExpenseCommandHandler(
         }
 
         return await submission
-            .SubmitAsync(receipt, command.Context.User.UserId, command.Context.CorrelationId, cancellationToken)
+            .SubmitAsync(receipt, command.Context, cancellationToken)
             .ConfigureAwait(false);
     }
 }

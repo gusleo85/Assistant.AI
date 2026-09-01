@@ -19,16 +19,23 @@ public sealed record ExpenseCategory(Guid Id, string Name, string? AccountCode =
 public sealed record ExpenseTax(Guid Id, string Name, decimal Rate, string Label);
 
 /// <summary>
-/// The company's category and tax lists. Fetched per organization, never shared between them.
+/// A currency the company can claim in. <see cref="Code"/> is the ISO-4217 code the API stores as the
+/// currency's name; <see cref="Id"/> is what an expense record actually references.
+/// </summary>
+public sealed record ExpenseCurrency(Guid Id, string Code, string Name, decimal ExchangeRate);
+
+/// <summary>
+/// The company's category, tax and currency lists. Fetched per organization, never shared between them.
 /// </summary>
 public sealed record ExpenseCatalogue(
     IReadOnlyList<ExpenseCategory> Categories,
-    IReadOnlyList<ExpenseTax> Taxes)
+    IReadOnlyList<ExpenseTax> Taxes,
+    IReadOnlyList<ExpenseCurrency> Currencies)
 {
     /// <summary>What a caller gets when the catalogue could not be loaded. Extraction still proceeds.</summary>
-    public static readonly ExpenseCatalogue Empty = new([], []);
+    public static readonly ExpenseCatalogue Empty = new([], [], []);
 
-    public bool IsEmpty => Categories.Count == 0 && Taxes.Count == 0;
+    public bool IsEmpty => Categories.Count == 0 && Taxes.Count == 0 && Currencies.Count == 0;
 
     /// <summary>
     /// Resolves a category name the model answered with. Matching is case-insensitive and trimmed —
@@ -60,6 +67,23 @@ public sealed record ExpenseCatalogue(
 
         return Taxes.FirstOrDefault(
             tax => string.Equals(Comparable(tax.Label), candidate, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Resolves an ISO-4217 code to the company's currency record. A code the company does not claim in
+    /// resolves to nothing, which is the honest answer: the expense could not be filed in it anyway.
+    /// </summary>
+    public ExpenseCurrency? FindCurrency(string? code)
+    {
+        var candidate = Comparable(code);
+
+        if (candidate is null)
+        {
+            return null;
+        }
+
+        return Currencies.FirstOrDefault(
+            currency => string.Equals(currency.Code, candidate, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

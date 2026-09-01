@@ -23,7 +23,14 @@ public sealed record ExpenseSubmission(
     CorrelationId CorrelationId,
     Guid? CategoryId = null,
     IReadOnlyList<Guid>? TaxIds = null,
-    string? Location = null)
+    string? Location = null,
+    Guid? CurrencyId = null,
+
+    /// <summary>
+    /// Which company and member this expense belongs to, resolved from the channel identity before the
+    /// call is built. The API needs it on every request; the caller never states it.
+    /// </summary>
+    ExpenseTenant? Tenant = null)
 {
     /// <summary>The catalogue taxes matched on this receipt. Never null, so callers need no guard.</summary>
     public IReadOnlyList<Guid> TaxIds { get; init; } = TaxIds ?? [];
