@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Mvc;
 using System.Text.Json.Nodes;
 using Justina.Expense.Infrastructure.MockData;
 
@@ -25,7 +26,11 @@ public static class MockExpenseEndpoints
     {
         var expense = app.MapGroup("/mock/expense/v1");
 
-        expense.MapPost("/Receipt/chat/scan", ChatScan);
+        // The two calls a chat submission is made of: the image creates the receipt, the confirmed
+        // values are written onto it. Both mirror the real endpoints, including that chat/scan takes
+        // multipart form data and update takes JSON.
+        expense.MapPost("/Receipt/chat/scan", ChatScan).DisableAntiforgery();
+        expense.MapPut("/Receipt/update", ReceiptUpdate);
 
         // The catalogue the model's answers are matched against. The organizationId is in the route
         // because these lists are per-company; the mock checks it is present but serves one company.
@@ -56,19 +61,25 @@ public static class MockExpenseEndpoints
         return app;
     }
 
-    private static IResult ChatScan(JsonObject payload, HttpContext http, ILoggerFactory loggerFactory)
+    /// <summary>
+    /// Stands in for <c>POST v1/Receipt/chat/scan</c>: the image arrives, a receipt id comes back.
+    /// Multipart, like the real endpoint, because a mock that accepted JSON would let a client that
+    /// cannot talk to the real thing look like it works.
+    /// </summary>
+    private static async Task<IResult> ChatScan(
+        HttpRequest request,
+        [FromQuery] string? organizationId,
+        [FromQuery] string? memberId,
+        ILoggerFactory loggerFactory)
     {
         var logger = loggerFactory.CreateLogger("MockExpenseApi");
 
-        var unauthorized = RequireSystemToken(http, logger, "Receipt/chat/scan");
+        var unauthorized = RequireSystemToken(request.HttpContext, logger, "Receipt/chat/scan");
 
         if (unauthorized is not null)
         {
             return unauthorized;
         }
-
-        var organizationId = payload["organizationId"]?.GetValue<string>();
-        var memberId = payload["memberId"]?.GetValue<string>();
 
         // Both identify who the expense is filed for. Without them the real system could not place it,
         // so the mock refuses rather than inventing a default.
@@ -81,26 +92,94 @@ public static class MockExpenseEndpoints
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
+        if (!request.HasFormContentType)
+        {
+            return Results.Json(
+                new { message = "Expected multipart form data with a file." },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var form = await request.ReadFormAsync().ConfigureAwait(false);
+        var file = form.Files["file"];
+
+        if (file is null || file.Length == 0)
+        {
+            // The real endpoint creates the receipt from the photo. No photo, no receipt.
+            logger.LogWarning("Mock Receipt/chat/scan called without a file");
+
+            return Results.Json(
+                new { message = "A file is required." },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
         var receiptId = Guid.NewGuid().ToString();
+
+        logger.LogInformation(
+            "MOCK Receipt/chat/scan stored {Bytes} bytes of {ContentType} as receipt {ReceiptId} for "
+            + "member {MemberId} in organization {OrganizationId}. NOTHING WAS SENT TO THE EXPENSE SYSTEM.",
+            file.Length,
+            file.ContentType,
+            receiptId,
+            memberId,
+            organizationId);
+
+        return Results.Ok(new
+        {
+            id = receiptId,
+            status = "ScanInProgress",
+            memberId,
+            organizationId,
+            mock = true,
+        });
+    }
+
+    /// <summary>
+    /// Stands in for <c>PUT v1/Receipt/update</c>: the confirmed values are written onto the receipt the
+    /// previous call created. This is where the payload worth reading is, so this is where it is logged
+    /// with every identifier resolved to its name.
+    /// </summary>
+    private static IResult ReceiptUpdate(JsonObject payload, HttpContext http, ILoggerFactory loggerFactory)
+    {
+        var logger = loggerFactory.CreateLogger("MockExpenseApi");
+
+        var unauthorized = RequireSystemToken(http, logger, "Receipt/update");
+
+        if (unauthorized is not null)
+        {
+            return unauthorized;
+        }
+
+        var receiptId = payload["receiptId"]?.GetValue<string>();
+
+        if (string.IsNullOrWhiteSpace(receiptId))
+        {
+            logger.LogWarning("Mock Receipt/update called without a receiptId");
+
+            return Results.Json(
+                new { message = "receiptId is required." },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var expenseId = Guid.NewGuid().ToString();
 
         // Every id in the payload, resolved back to the name it stands for. Reading a log full of GUIDs
         // tells you nothing about whether the right category was chosen; reading "Meals and
         // Entertainment" tells you immediately.
         logger.LogInformation(
-            "MOCK Receipt/chat/scan accepted a receipt as {ReceiptId}. "
+            "MOCK Receipt/update wrote receipt {ReceiptId} as expense {ExpenseId}. "
             + "NOTHING WAS SENT TO THE EXPENSE SYSTEM.\n{Summary}",
             receiptId,
-            Describe(payload, organizationId, memberId));
+            expenseId,
+            Describe(payload));
 
-        // The raw payload too, for anyone diffing against the eventual real contract.
-        logger.LogInformation("MOCK Receipt/chat/scan raw payload: {Payload}", payload.ToJsonString());
+        // The raw payload too, for anyone diffing against the real contract.
+        logger.LogInformation("MOCK Receipt/update raw payload: {Payload}", payload.ToJsonString());
 
         return Results.Ok(new
         {
-            receiptId,
-            status = "Scanned",
-            organizationId,
-            memberId,
+            id = receiptId,
+            expenseId,
+            status = "ScanComplete",
             mock = true,
         });
     }
@@ -112,7 +191,7 @@ public static class MockExpenseEndpoints
     /// that it resolved to a real catalogue row — not a GUID they would have to look up by hand to know
     /// whether the mapping was right.
     /// </summary>
-    private static string Describe(JsonObject payload, string organizationId, string memberId)
+    private static string Describe(JsonObject payload)
     {
         var categories = Lookup(MockDataResources.Categories);
         var currencies = Lookup(MockDataResources.Currencies);
@@ -122,13 +201,14 @@ public static class MockExpenseEndpoints
 
         var lines = new List<string>
         {
-            $"  organization : {organizationId} ({Organization()})",
-            $"  member       : {memberId} ({Member(memberId)})",
+            $"  receipt      : {Text("receiptId")}",
             $"  merchant     : {Text("merchantName")}",
             $"  reference    : {Text("referenceNumber")}",
             $"  date         : {Text("date")}",
             $"  amount       : {Text("amount")}",
-            $"  currency     : {Describe(Text("currencyId"), currencies, Text("currencyCode"))}",
+            // Receipt/update carries no currency id — the API resolves the currency from the code — so
+            // there is nothing to resolve here and saying "NO ID RESOLVED" would read like a defect.
+            $"  currency     : {Text("currencyCode") ?? "(none)"}",
             $"  category     : {Describe(Text("categoryId"), categories, Text("category"))}",
             $"  location     : {Text("location") ?? "(none)"}",
             $"  tax amount   : {payload["taxAmount"]?.ToJsonString() ?? "(none)"}",

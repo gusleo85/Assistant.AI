@@ -55,6 +55,10 @@ public sealed class ExpenseModelConfiguration : IModelConfiguration
                 .HasColumnName("TaxLabels")
                 .UsePropertyAccessMode(PropertyAccessMode.Field);
             entity.Property(e => e.ExternalExpenseId).HasMaxLength(128);
+
+            // Not unique, unlike ExternalExpenseId: this is written before the submission is known to
+            // have succeeded, and a receipt that failed and was cancelled leaves one behind.
+            entity.Property(e => e.ExternalReceiptId).HasMaxLength(128);
             entity.Property(e => e.FailureReason).HasMaxLength(256);
             entity.Property(e => e.CreatedAtUtc).HasColumnType("datetime2");
             entity.Property(e => e.UpdatedAtUtc).HasColumnType("datetime2");

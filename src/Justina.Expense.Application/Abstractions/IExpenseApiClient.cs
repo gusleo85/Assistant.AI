@@ -30,7 +30,28 @@ public sealed record ExpenseSubmission(
     /// Which company and member this expense belongs to, resolved from the channel identity before the
     /// call is built. The API needs it on every request; the caller never states it.
     /// </summary>
-    ExpenseTenant? Tenant = null)
+    ExpenseTenant? Tenant = null,
+
+    /// <summary>
+    /// The stored image this expense came from. The Expense API creates its receipt from the photo
+    /// itself, so the bytes have to travel with the submission — not just the values read out of them.
+    /// </summary>
+    string? SourceMediaId = null,
+
+    /// <summary>
+    /// The receipt the Expense API already created for this submission, if a previous attempt got that
+    /// far. Supplied so a retry writes its values onto that receipt instead of creating a second one.
+    /// </summary>
+    string? ExternalReceiptId = null,
+
+    /// <summary>
+    /// Called the moment the Expense API creates its receipt, before the values are written.
+    ///
+    /// It exists because the interesting failure is between the two calls: an expense exists, its values
+    /// do not, and nothing has returned yet. Telling the caller at that point is what lets a retry
+    /// resume — a delegate rather than a return value precisely because there may be no return.
+    /// </summary>
+    Action<string>? OnReceiptCreated = null)
 {
     /// <summary>The catalogue taxes matched on this receipt. Never null, so callers need no guard.</summary>
     public IReadOnlyList<Guid> TaxIds { get; init; } = TaxIds ?? [];

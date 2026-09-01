@@ -158,10 +158,18 @@ public sealed class JustLoginAccessTokenProvider(
             return;
         }
 
+        var claims = token.GetJustLoginToken();
+
+        // Subject and UserGUID decide which endpoints will accept this token: expense-api treats a
+        // subject of "System" as permission to read the acting member from the query string, and only
+        // reaches for the query string when the token names no user of its own.
         logger.LogInformation(
-            "Company token for CompanyID {CompanyId} carries CompanyGUID {CompanyGuid}, valid until {Expiry}",
+            "Company token for CompanyID {CompanyId} carries CompanyGUID {CompanyGuid}, subject {Subject}, "
+            + "user {UserGuid}, valid until {Expiry}",
             companyId,
             company,
+            claims?.TokenData?.ID,
+            string.IsNullOrWhiteSpace(claims?.UserGUID) ? "(none)" : claims!.UserGUID,
             expiresAt);
     }
 

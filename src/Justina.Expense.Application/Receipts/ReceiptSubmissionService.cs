@@ -130,7 +130,13 @@ public sealed class ReceiptSubmissionService(
             receipt.TaxIds,
             receipt.Location,
             receipt.CurrencyId,
-            tenant);
+            tenant,
+            receipt.SourceMediaId,
+            receipt.ExternalReceiptId,
+            // Recorded on the aggregate as it happens. The save below runs whether the submission
+            // succeeded or failed, so a receipt created by a half-finished attempt is remembered either
+            // way, and the retry writes onto it rather than creating another expense.
+            receipt.RecordExternalReceipt);
 
     /// <summary>
     /// Deterministic from the receipt identity and its confirmed content, so a retry of the same

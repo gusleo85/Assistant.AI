@@ -107,6 +107,12 @@ public sealed class ExpenseApiOptions
     public string ChatScanPath { get; set; } = "expense/v1/Receipt/chat/scan";
 
     /// <summary>
+    /// Where the confirmed values are written, once <see cref="ChatScanPath"/> has created the receipt.
+    /// The same endpoint the receipt-scanner Lambda reports its own reading to.
+    /// </summary>
+    public string ReceiptUpdatePath { get; set; } = "expense/v1/Receipt/update";
+
+    /// <summary>
     /// How long a company's catalogue is reused. The Lambda re-reads it per event because it is
     /// short-lived; Justina is long-lived and would otherwise re-read it for every photo.
     /// </summary>

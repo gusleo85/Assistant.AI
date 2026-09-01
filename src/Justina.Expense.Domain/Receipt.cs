@@ -107,6 +107,29 @@ public sealed class Receipt
     /// <summary>The external system's expense id. Its presence is what makes a re-submit a no-op.</summary>
     public string? ExternalExpenseId { get; private set; }
 
+    /// <summary>
+    /// The receipt the Expense API created for this one, before its values were written.
+    ///
+    /// Submission is two calls — the image creates a receipt, then the confirmed values are written onto
+    /// it — and the gap between them is where duplicates come from. If the second call fails, the first
+    /// has already created an expense; a retry that started over would create a second, and the user
+    /// would see two identical claims for one photo. Recorded as soon as it exists so a retry resumes
+    /// rather than restarts (§33).
+    /// </summary>
+    public string? ExternalReceiptId { get; private set; }
+
+    /// <summary>
+    /// Remembers the receipt the Expense API created. Recorded on the way through, before anyone knows
+    /// whether the submission as a whole will succeed, because that is exactly when it matters.
+    /// </summary>
+    public void RecordExternalReceipt(string externalReceiptId)
+    {
+        if (!string.IsNullOrWhiteSpace(externalReceiptId))
+        {
+            ExternalReceiptId = externalReceiptId;
+        }
+    }
+
     public string? FailureReason { get; private set; }
 
     public DateTimeOffset CreatedAtUtc { get; private set; }
