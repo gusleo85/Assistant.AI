@@ -76,3 +76,48 @@ public sealed class GetReceiptStatusQueryHandler(IReceiptAccess receipts)
             receipt.FailureReason));
     }
 }
+
+/// <summary>
+/// The receipts extracted from the document this conversation is working on.
+///
+/// Used when a repeated inbound message is dropped by deduplication: the caller still needs something to
+/// show, and it must come back through a capability-checked query rather than a bare repository read.
+/// </summary>
+public sealed record GetActiveExtractionQuery(RequestContext Context)
+    : IQuery<ReceiptExtractionOutcome>, IRequireCapability
+{
+    public string RequiredCapability => Capabilities.ExpenseRead;
+}
+
+public sealed class GetActiveExtractionQueryHandler(
+    IReceiptAccess receipts,
+    IReceiptRepository repository)
+    : IQueryHandler<GetActiveExtractionQuery, ReceiptExtractionOutcome>
+{
+    public async Task<Result<ReceiptExtractionOutcome>> HandleAsync(
+        GetActiveExtractionQuery query,
+        CancellationToken cancellationToken)
+    {
+        var loaded = await receipts.GetActiveAsync(query.Context, cancellationToken).ConfigureAwait(false);
+
+        if (loaded.IsFailure)
+        {
+            return Result.Failure<ReceiptExtractionOutcome>(loaded.Error);
+        }
+
+        var active = loaded.Value;
+
+        // Siblings belong to a batch on a receipt the caller has already been granted, so reading them
+        // directly is safe.
+        var receiptsInBatch = active.BatchId is { } batchId
+            ? await repository.GetByBatchAsync(batchId, cancellationToken).ConfigureAwait(false)
+            : [active];
+
+        var snapshots = receiptsInBatch
+            .OrderBy(r => r.SequenceInBatch)
+            .Select(ReceiptSnapshot.From)
+            .ToList();
+
+        return Result.Success(new ReceiptExtractionOutcome(snapshots.Count, active.BatchId, snapshots));
+    }
+}

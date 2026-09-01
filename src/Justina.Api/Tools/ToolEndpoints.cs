@@ -12,7 +12,11 @@ namespace Justina.Api.Tools;
 
 /// <summary>
 /// The tool surface OpenClaw agents call (§16). Every endpoint is a thin translation between the tool
-/// contract and a command or query — no business logic lives here.
+/// contract and a command or query — no business logic, and deliberately no receipt lookup either.
+///
+/// Resolving "the active receipt" happens inside the handlers, which run behind the authorization
+/// decorator. Doing it here would run before authorization and let an unmapped caller learn whether a
+/// conversation has a receipt in progress.
 /// </summary>
 public static class ToolEndpoints
 {
@@ -61,7 +65,6 @@ public static class ToolEndpoints
         RequestContextFactory contexts,
         IDispatcher dispatcher,
         IInboundMessageDeduplicator deduplicator,
-        IReceiptResolver receipts,
         CancellationToken cancellationToken)
     {
         var context = await contexts.CreateAsync(request.Envelope, cancellationToken).ConfigureAwait(false);
@@ -88,9 +91,10 @@ public static class ToolEndpoints
 
         if (!isNew)
         {
-            // Already handled. Return what exists rather than processing the same document twice.
-            var existing = await receipts
-                .GetActiveOutcomeAsync(context.Value, cancellationToken)
+            // Already handled. Return what exists rather than processing the same document twice — through
+            // a capability-checked query, so a repeat from an unauthorized caller is still refused.
+            var existing = await dispatcher
+                .QueryAsync(new GetActiveExtractionQuery(context.Value), cancellationToken)
                 .ConfigureAwait(false);
 
             return Respond(existing);
@@ -142,7 +146,6 @@ public static class ToolEndpoints
         EditReceiptRequest request,
         RequestContextFactory contexts,
         IDispatcher dispatcher,
-        IReceiptResolver receipts,
         CancellationToken cancellationToken)
     {
         var context = await contexts.CreateAsync(request.Envelope, cancellationToken).ConfigureAwait(false);
@@ -152,21 +155,12 @@ public static class ToolEndpoints
             return Respond(Result.Failure<ReceiptSnapshot>(context.Error));
         }
 
-        var receiptId = await receipts
-            .ResolveAsync(context.Value, request.ReceiptId, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (receiptId.IsFailure)
-        {
-            return Respond(Result.Failure<ReceiptSnapshot>(receiptId.Error));
-        }
-
         var edits = (request.Edits ?? [])
             .Select(e => new ReceiptEditRequest(e.Field, e.Value))
             .ToList();
 
         var result = await dispatcher
-            .SendAsync(new UpdateReceiptCommand(context.Value, receiptId.Value, edits), cancellationToken)
+            .SendAsync(new UpdateReceiptCommand(context.Value, request.ReceiptId, edits), cancellationToken)
             .ConfigureAwait(false);
 
         return Respond(result);
@@ -176,7 +170,6 @@ public static class ToolEndpoints
         ConfirmReceiptRequest request,
         RequestContextFactory contexts,
         IDispatcher dispatcher,
-        IReceiptResolver receipts,
         CancellationToken cancellationToken)
     {
         var context = await contexts.CreateAsync(request.Envelope, cancellationToken).ConfigureAwait(false);
@@ -186,17 +179,8 @@ public static class ToolEndpoints
             return Respond(Result.Failure<ReceiptSnapshot>(context.Error));
         }
 
-        var receiptId = await receipts
-            .ResolveAsync(context.Value, request.ReceiptId, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (receiptId.IsFailure)
-        {
-            return Respond(Result.Failure<ReceiptSnapshot>(receiptId.Error));
-        }
-
         var result = await dispatcher
-            .SendAsync(new ConfirmReceiptCommand(context.Value, receiptId.Value), cancellationToken)
+            .SendAsync(new ConfirmReceiptCommand(context.Value, request.ReceiptId), cancellationToken)
             .ConfigureAwait(false);
 
         return Respond(result);
@@ -206,7 +190,6 @@ public static class ToolEndpoints
         CancelReceiptRequest request,
         RequestContextFactory contexts,
         IDispatcher dispatcher,
-        IReceiptResolver receipts,
         CancellationToken cancellationToken)
     {
         var context = await contexts.CreateAsync(request.Envelope, cancellationToken).ConfigureAwait(false);
@@ -216,17 +199,8 @@ public static class ToolEndpoints
             return Respond(Result.Failure<ReceiptSnapshot>(context.Error));
         }
 
-        var receiptId = await receipts
-            .ResolveAsync(context.Value, request.ReceiptId, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (receiptId.IsFailure)
-        {
-            return Respond(Result.Failure<ReceiptSnapshot>(receiptId.Error));
-        }
-
         var result = await dispatcher
-            .SendAsync(new CancelReceiptCommand(context.Value, receiptId.Value), cancellationToken)
+            .SendAsync(new CancelReceiptCommand(context.Value, request.ReceiptId), cancellationToken)
             .ConfigureAwait(false);
 
         return Respond(result);
@@ -240,7 +214,6 @@ public static class ToolEndpoints
         RetrySubmissionRequest request,
         RequestContextFactory contexts,
         IDispatcher dispatcher,
-        IReceiptResolver receipts,
         CancellationToken cancellationToken)
     {
         var context = await contexts.CreateAsync(request.Envelope, cancellationToken).ConfigureAwait(false);
@@ -250,17 +223,8 @@ public static class ToolEndpoints
             return Respond(Result.Failure<ReceiptSnapshot>(context.Error));
         }
 
-        var receiptId = await receipts
-            .ResolveAsync(context.Value, request.ReceiptId, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (receiptId.IsFailure)
-        {
-            return Respond(Result.Failure<ReceiptSnapshot>(receiptId.Error));
-        }
-
         var result = await dispatcher
-            .SendAsync(new SubmitExpenseCommand(context.Value, receiptId.Value), cancellationToken)
+            .SendAsync(new SubmitExpenseCommand(context.Value, request.ReceiptId), cancellationToken)
             .ConfigureAwait(false);
 
         return Respond(result);

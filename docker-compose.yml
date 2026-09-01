@@ -39,6 +39,8 @@ services:
         Server=justina-sqlserver,1433;Database=Justina;User Id=sa;Password=${MSSQL_SA_PASSWORD};
         TrustServerCertificate=True;Encrypt=True;MultipleActiveResultSets=False
       ToolApi__SharedSecret: ${JUSTINA_TOOL_SECRET:?set JUSTINA_TOOL_SECRET in .env}
+      # JSON array; grants the first users their capabilities. See docs/02-developer/getting-started.md
+      Seed__Principals: ${JUSTINA_SEED_PRINCIPALS:-}
       OpenAiVision__ApiKey: ${OPENAI_API_KEY:-}
       OpenAiVision__Model: ${OPENAI_VISION_MODEL:-gpt-4.1}
       Telegram__BotToken: ${TELEGRAM_BOT_TOKEN:-}

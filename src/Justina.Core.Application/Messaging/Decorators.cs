@@ -116,7 +116,9 @@ public sealed class IdempotencyCommandDecorator<TCommand, TResult>(
 
     public async Task<Result<TResult>> HandleAsync(TCommand command, CancellationToken cancellationToken)
     {
-        if (command is not IIdempotentCommand idempotent)
+        // An empty key means "this instance has nothing stable to key on" — replaying a stored result
+        // could then answer for a different entity later. Such commands rely on their own state guards.
+        if (command is not IIdempotentCommand idempotent || string.IsNullOrWhiteSpace(idempotent.IdempotencyKey))
         {
             return await inner.HandleAsync(command, cancellationToken).ConfigureAwait(false);
         }

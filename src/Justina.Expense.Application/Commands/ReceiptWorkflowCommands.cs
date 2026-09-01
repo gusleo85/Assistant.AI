@@ -15,7 +15,7 @@ namespace Justina.Expense.Application.Commands;
 /// </summary>
 public sealed record UpdateReceiptCommand(
     RequestContext Context,
-    Guid ReceiptId,
+    Guid? ReceiptId,
     IReadOnlyCollection<ReceiptEditRequest> Edits) : ICommand<ReceiptSnapshot>, IRequireCapability
 {
     public string RequiredCapability => Capabilities.ExpenseSubmit;
@@ -31,7 +31,7 @@ public sealed class UpdateReceiptCommandHandler(
         UpdateReceiptCommand command,
         CancellationToken cancellationToken)
     {
-        var loaded = await receipts.GetAsync(command.Context, command.ReceiptId, cancellationToken).ConfigureAwait(false);
+        var loaded = await receipts.ResolveAsync(command.Context, command.ReceiptId, cancellationToken).ConfigureAwait(false);
 
         if (loaded.IsFailure)
         {
@@ -75,12 +75,15 @@ public sealed class UpdateReceiptCommandHandler(
 /// The user's explicit go-ahead, and the only path to the Expense API (§28, §31).
 /// Idempotent by receipt id: confirming twice returns the first outcome.
 /// </summary>
-public sealed record ConfirmReceiptCommand(RequestContext Context, Guid ReceiptId)
+public sealed record ConfirmReceiptCommand(RequestContext Context, Guid? ReceiptId)
     : ICommand<ReceiptSnapshot>, IRequireCapability, IIdempotentCommand
 {
     public string RequiredCapability => Capabilities.ExpenseSubmit;
 
-    public string IdempotencyKey => $"confirm:{ReceiptId}";
+    // Only an explicitly identified receipt gets a stable key. For "the active one", replaying a stored
+    // result could answer for a different receipt later in the same conversation, so the state guard
+    // (already SUBMITTED returns the existing expense) is what prevents a double submission there.
+    public string IdempotencyKey => ReceiptId is { } id ? $"confirm:{id}" : string.Empty;
 }
 
 public sealed class ConfirmReceiptCommandHandler(
@@ -96,7 +99,7 @@ public sealed class ConfirmReceiptCommandHandler(
         ConfirmReceiptCommand command,
         CancellationToken cancellationToken)
     {
-        var loaded = await receipts.GetAsync(command.Context, command.ReceiptId, cancellationToken).ConfigureAwait(false);
+        var loaded = await receipts.ResolveAsync(command.Context, command.ReceiptId, cancellationToken).ConfigureAwait(false);
 
         if (loaded.IsFailure)
         {
@@ -168,7 +171,7 @@ public sealed class ConfirmReceiptCommandHandler(
 }
 
 /// <summary>Cancelling must never submit anything (§54 rule 5).</summary>
-public sealed record CancelReceiptCommand(RequestContext Context, Guid ReceiptId)
+public sealed record CancelReceiptCommand(RequestContext Context, Guid? ReceiptId)
     : ICommand<ReceiptSnapshot>, IRequireCapability
 {
     public string RequiredCapability => Capabilities.ExpenseSubmit;
@@ -185,7 +188,7 @@ public sealed class CancelReceiptCommandHandler(
         CancelReceiptCommand command,
         CancellationToken cancellationToken)
     {
-        var loaded = await receipts.GetAsync(command.Context, command.ReceiptId, cancellationToken).ConfigureAwait(false);
+        var loaded = await receipts.ResolveAsync(command.Context, command.ReceiptId, cancellationToken).ConfigureAwait(false);
 
         if (loaded.IsFailure)
         {
@@ -224,7 +227,7 @@ public sealed class CancelReceiptCommandHandler(
 /// Retries a submission that failed after confirmation. Confirmation is not asked for again — the user
 /// already gave it, and the idempotency key is unchanged, so this cannot create a second expense.
 /// </summary>
-public sealed record SubmitExpenseCommand(RequestContext Context, Guid ReceiptId)
+public sealed record SubmitExpenseCommand(RequestContext Context, Guid? ReceiptId)
     : ICommand<ReceiptSnapshot>, IRequireCapability
 {
     public string RequiredCapability => Capabilities.ExpenseSubmit;
@@ -239,7 +242,7 @@ public sealed class SubmitExpenseCommandHandler(
         SubmitExpenseCommand command,
         CancellationToken cancellationToken)
     {
-        var loaded = await receipts.GetAsync(command.Context, command.ReceiptId, cancellationToken).ConfigureAwait(false);
+        var loaded = await receipts.ResolveAsync(command.Context, command.ReceiptId, cancellationToken).ConfigureAwait(false);
 
         if (loaded.IsFailure)
         {

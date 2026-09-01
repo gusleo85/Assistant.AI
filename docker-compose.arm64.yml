@@ -1,0 +1,40 @@
+# ARM64 development overlay.
+#
+# Microsoft ships mcr.microsoft.com/mssql/server for linux/amd64 only. On an ARM64 machine — Apple
+# Silicon, or Windows on ARM as here — the container starts and immediately dies with
+# "exec format error", and QEMU emulation is not a supported configuration for SQL Server.
+#
+# Azure SQL Edge is the same database engine published for arm64. It runs the schema this project uses:
+# rowversion concurrency, decimal(18,2), datetime2, filtered unique indexes.
+#
+# Use it for LOCAL DEVELOPMENT ONLY. Production and CI stay on SQL Server 2022, which is what
+# docker-compose.yml declares — that is why this is a separate file rather than an override that loads
+# automatically.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.arm64.yml up -d
+#
+# Known differences from SQL Server 2022, none of which this project depends on:
+#   - no SQL Server Agent, no full-text search, no PolyBase
+#   - a subset of the T-SQL surface (everything in our migrations is supported)
+#   - Microsoft has announced Azure SQL Edge retirement; treat it as a developer convenience only
+#
+# Verify anything schema-related against real SQL Server before release.
+
+services:
+
+  justina-sqlserver:
+    image: mcr.microsoft.com/azure-sql-edge:latest
+    platform: linux/arm64
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?set MSSQL_SA_PASSWORD in .env}
+      # Azure SQL Edge has no Developer edition; Developer is its own free tier name.
+      MSSQL_PID: Developer
+    healthcheck:
+      # Azure SQL Edge ships no sqlcmd binary, so probe the port instead. This proves the engine is
+      # accepting connections, which is what dependent services actually need.
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/1433' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s

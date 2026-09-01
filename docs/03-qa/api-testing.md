@@ -10,23 +10,25 @@ Justina has two API surfaces, and they fail in different ways. Test them separat
 Related: [test-environment.md](test-environment.md) for setup, [security-testing.md](security-testing.md)
 for the adversarial cases, [receipt-testing.md](receipt-testing.md) for the journey the Tool API drives.
 
-## Precondition: blocker B1
+## Precondition: what has actually been run
 
-`Directory.Build.props` sets `<InvariantGlobalization>true</InvariantGlobalization>`.
-`Microsoft.Data.SqlClient` refuses to open a connection in that mode and throws:
+The parts that do **not** touch the database were executed during the QA pass and their results were
+observed: the key middleware, envelope validation, the HTTP method surface, and every Expense API client
+test against WireMock. Everything below that reaches the database has **never been executed** — no SQL
+Server instance was available — so treat it as unproven.
+
+One resolved blocker worth remembering: `Directory.Build.props` used to set
+`<InvariantGlobalization>true</InvariantGlobalization>`, and `Microsoft.Data.SqlClient` refuses to open
+a connection in that mode:
 
 ```
 System.NotSupportedException: Globalization Invariant Mode is not supported.
    at Microsoft.Data.SqlClient.SqlConnection.TryOpen(...)
 ```
 
-`justina-app` exits at startup because the migration step throws (`Program.cs` line 87). Causation was
-confirmed by flipping only that flag in a copy of the build output: the same binaries then made a real TCP
-attempt and failed with an ordinary `SqlException`.
-
-Everything below that touches the database is blocked until B1 is fixed. The parts that do **not** touch
-the database still run today: the key middleware, envelope validation, the HTTP method surface, and every
-Expense API client test.
+`justina-app` exited at startup because the migration step threw (`Program.cs` line 87). It is fixed and
+re-verified — the property is now `false`. If that exception ever reappears, check
+`Directory.Build.props` before anything else.
 
 ---
 
@@ -104,7 +106,7 @@ Inside the compose network the address is `http://justina-app:8080`. From the ho
 port; compose does not publish one, so either add a temporary port mapping in an override file or run the
 app directly as described in [test-environment.md](test-environment.md).
 
-## A1 — Authentication
+## A.1 — Authentication
 
 ### A1.1 No key
 
@@ -151,11 +153,20 @@ accepting anonymous work.
 curl -s -o /dev/null -w '%{http_code}\n' "$BASE/health/live"
 ```
 
-Expected: `200` when the database is reachable, `503` when it is not. Never 401 — the middleware only
-guards paths starting `/tools`.
+Expected: `200` whether or not the database is reachable — liveness is deliberately shallow. Never 401,
+because the middleware only guards paths starting `/tools`. Then check readiness:
 
-Note the defect: `/health/live` and `/health/ready` are registered identically with no predicate, so
-liveness includes the database check. See [security-testing.md](security-testing.md), finding B2.
+```bash
+curl -s -w ' HTTP=%{http_code}\n' "$BASE/health/ready"
+```
+
+Expected: `200 Healthy` with the database up, `503 Unhealthy` with it down. Both behaviours were
+confirmed on a running instance.
+
+Note the history here: `/health/live` and `/health/ready` were once registered identically, so
+liveness used to include the database check. That was defect B2, now fixed and re-verified: `/health/live`
+carries `Predicate = _ => false`, so it returns 200 even with the database down, while `/health/ready`
+correctly reports 503. See [security-testing.md](security-testing.md).
 
 ### A1.6 Wrong method
 
@@ -166,7 +177,7 @@ curl -s -o /dev/null -w '%{http_code}\n' "$BASE/tools/session.context" \
 
 Expected: `405`. Confirmed on a running instance.
 
-## A2 — Envelope validation
+## A.2 — Envelope validation
 
 These run before any database access, so they work without a database at all.
 
@@ -206,7 +217,7 @@ HTTP 200. Confirmed on a running instance. The same message appears for a missin
 
 Send `{}`. Expected: `validation_failed`, "The request envelope is missing."
 
-## A3 — Authorization
+## A.3 — Authorization
 
 Authentication proves the caller is OpenClaw. Authorization decides what the **user behind the message**
 may do. They are independent: a valid tool key gets you in the door and nothing more.
@@ -263,7 +274,7 @@ has regressed and an unauthorized caller is learning the request shape.
 Six unit tests in `tests/Justina.Core.UnitTests/DecoratorTests.cs` already assert this behaviour,
 including that the handler is never invoked. They pass. A3 is the end-to-end confirmation.
 
-## A4 — Endpoint walkthrough
+## A.4 — Endpoint walkthrough
 
 All examples assume `TOOL_KEY` and `BASE` are exported and the user is seeded with `expense.submit`
 and `expense.read`.
@@ -404,7 +415,7 @@ Headers:
 
 The expense id is read from `id`, then `expenseId`, then `data.id`, in that order.
 
-## B1 — Status mapping
+## B.1 — Status mapping
 
 Every row below is asserted by a passing integration test in
 `tests/Justina.IntegrationTests/ExpenseApiClientTests.cs`.
@@ -431,7 +442,7 @@ dotnet test tests/Justina.IntegrationTests --nologo
 Expected: 10 passed, 0 failed. These do not need Docker, a database, or network access — WireMock runs
 in-process. They pass today and need no database.
 
-## B2 — What the tests do not cover
+## B.2 — What the tests do not cover
 
 The integration tests construct a plain `HttpClient`:
 
@@ -506,7 +517,7 @@ request log: once the breaker opens, the stub stops receiving requests while the
 This is a timing-dependent test. Record the thresholds you observe rather than asserting a specific
 number — the standard handler's defaults may change with the package version.
 
-## B3 — Timeout
+## B.3 — Timeout
 
 `ExpenseApi:TimeoutSeconds` (default 30) sets `HttpClient.Timeout`. The standard resilience handler adds
 its own per-attempt timeout.
@@ -534,7 +545,7 @@ Pass: `State = 7` (`SubmissionFailed`), `ExternalExpenseId` null.
 
 Reduce `ExpenseApi__TimeoutSeconds` to 3 to keep this test fast.
 
-## B4 — Provider detail must not reach the user
+## B.4 — Provider detail must not reach the user
 
 Stub a 500 with a revealing body:
 
@@ -551,7 +562,7 @@ in the tool response.
 
 Read the tool response and confirm the string `NullPointerException` does not appear anywhere in it.
 
-## B5 — Unconfigured API
+## B.5 — Unconfigured API
 
 Leave `EXPENSE_API_URL` blank, which is the current default in `.env.example`.
 
@@ -559,7 +570,7 @@ Expected: `not_available`, "Expense submission is not available right now." and 
 Confirm with an empty stub request log. This is the behaviour a tester will hit by default today, because
 the real contract has not been supplied.
 
-## B6 — Exactly one expense on a duplicate confirmation
+## B.6 — Exactly one expense on a duplicate confirmation
 
 This is the acceptance criterion that matters most, and it has four independent defences. Test the
 outcome, then verify each defence held.
@@ -614,7 +625,7 @@ Expected: one succeeds; the other either returns the same expense id or returns 
 changed this at the same time. Please check the current state and try again." Never two expenses. The
 `rowversion` column on `Receipts` is what makes the losing writer fail.
 
-## B7 — Idempotency key stability
+## B.7 — Idempotency key stability
 
 The key is a SHA-256 hex digest over the receipt id, merchant, date, currency, amount, receipt number and
 tax. Two unit tests in `tests/Justina.Expense.UnitTests/ReceiptSubmissionServiceTests.cs` assert it is
@@ -630,6 +641,6 @@ confirm the header is byte-identical. Then submit a different receipt and confir
 | Any test that reaches the database | No SQL Server instance was available during the QA pass |
 | Real Expense API request/response shape, auth scheme, error contract | Plan risk R1 — no specification supplied |
 | Recruitment API request/response shape | Plan risk R2 — phase 1 is routing only |
-| Retry and circuit-breaker behaviour | No automated coverage; manual only (B2) |
+| Retry and circuit-breaker behaviour | No automated coverage; manual only (see section B.2) |
 
 Record results against the case ids in [test-cases.md](test-cases.md).

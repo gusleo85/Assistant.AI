@@ -24,18 +24,20 @@ rest of this document; it simply has not been done.
 Read these before you start. Some are defects, some are gaps, and some are unverified risks you are being
 asked to close.
 
-| Id | Finding | Severity |
+| Id | Finding | Status |
 |---|---|---|
-| B1 | Invariant globalization broke every SQL Server connection — **fixed and re-verified during the QA pass**; do not let it regress | Closed |
-| B2 | `/health/live` includes the database check | Medium |
-| B5 | A receipt can be read, edited, confirmed or cancelled from another conversation | High |
-| S1 | A `SecretScrubber` now exists and is wired into tracing, but `IsSensitiveHeader` is called from nowhere and nothing is wired into Serilog | Low |
-| S2 | Telegram bot token sits in the request path; trace URLs are now scrubbed, but the runtime effect is still unverified | Low |
-| S3 | WhatsApp `X-Hub-Signature-256` verification is not implemented in this repository | Medium |
-| S4 | No exception-handling middleware; Development leaks stack traces | Low to medium |
-| S5 | No CI pipeline and no automated dependency scan | Low |
+| B1 | Invariant globalization broke every SQL Server connection | **Closed** — fixed and re-verified during the QA pass; do not let it regress |
+| B2 | `/health/live` included the database check | **Closed** — `/health/live` now returns 200 with the database down, `/health/ready` still 503; re-verified |
+| B5 | A receipt could be read, edited, confirmed or cancelled from another conversation | **Closed at unit level** — a new `IReceiptAccess` guard checks ownership on every load, with 7 tests. **Never tried against a live database** — that is SEC-01b below, and it is still yours to run |
+| S1 | No credential redaction in logs or traces | **Closed at unit level** — `SecretScrubber` is wired into both trace URLs and `RedactLoggedHeaders`, with 21 tests. Runtime effect unobserved |
+| S2 | Telegram bot token sits in the request path | **Closed at unit level** — trace URLs are scrubbed. Runtime effect unobserved; see SEC-41 |
+| S3 | WhatsApp `X-Hub-Signature-256` verification is not implemented in this repository | **Open** — Medium |
+| S4 | No exception-handling middleware; Development leaks stack traces | **Open** — Low to medium |
+| S5 | No CI pipeline and no automated dependency scan | **Open** — Low |
 
-Each is expanded below with the test that closes it.
+"Closed at unit level" means the mechanism exists and its unit tests pass, but nobody has ever run the
+case against a running system. Those are the most important cases in this document, because a passing
+unit test and a working system are not the same claim.
 
 ---
 
@@ -62,21 +64,17 @@ Repeat with a wrong key. Same result: `401`.
 ### SEC-01b — A receipt belonging to someone else (finding B5) **(needs a database)**
 
 Holding a capability answers "may this principal submit expenses at all". It does not answer "may this
-principal touch *this* receipt". Nothing in the current code asks the second question.
+principal touch *this* receipt". These are different questions and both must be asked.
 
-`ReceiptResolver.ResolveAsync` returns an explicitly supplied `receiptId` without checking it:
+This was a real defect: `ReceiptResolver.ResolveAsync` returned an explicitly supplied `receiptId`
+unchecked, and every handler loaded by that id and checked only the receipt's *state*. It was fixed
+during the QA pass. `IReceiptAccess`
+(`src/Justina.Expense.Application/Abstractions/IReceiptAccess.cs`) is now the single way a handler
+obtains a receipt; it resolves the caller's conversation and refuses anything that does not belong to it,
+returning `not_found` rather than `unauthorized` so an id cannot be probed for existence.
 
-```csharp
-if (explicitReceiptId is { } id)
-{
-    return Result.Success(id);
-}
-```
-
-and the update, confirm, cancel and get-receipt handlers each load by that id and check only the
-receipt's *state*. No handler compares the loaded `Receipt.ConversationId` against the caller's
-conversation, even though the `IReceiptResolver` comment claims "the agent cannot act on a receipt
-belonging to another conversation".
+`ReceiptAccessTests` covers it with 7 passing tests. **But nobody has ever tried the attack against a
+running system**, which is why this case still matters. Run it.
 
 **Setup.** Two principals in `Principals`, both with `expense.submit`, on two different
 `conversationId` values. Put a receipt through extraction in conversation 1 and note its `receiptId`.
@@ -97,9 +95,10 @@ Repeat for `expense.edit_receipt`, `expense.confirm_receipt` and `expense.cancel
 cannot be probed for existence.
 **Fail:** any call returns the receipt's data, changes it, submits it, or cancels it.
 
-**This case is expected to fail today.** It has never been executed — it needs a database, which was never
-available during the QA pass. Run it first, and record the actual behaviour rather than assuming either
-outcome.
+**It should pass now, but that is a prediction, not a result.** The guard is in place and unit-tested;
+the case has never been executed against a database. Run it early and record what actually happens. A
+mechanism that works in a unit test and fails in the wired-up application is exactly the kind of thing
+this case exists to catch.
 
 ### SEC-02 — Fail closed when no secret is configured **(runs today)**
 
@@ -398,22 +397,30 @@ which passes.
 
 ## 5. Secret leakage
 
-### SEC-40 — Finding S1: redaction exists but is only half wired
+### SEC-40 — Finding S1: redaction is wired, but has never been seen working
 
-`src/Justina.Core.Infrastructure/Security/SecretScrubber.cs` now exists. `SecretScrubber.Redact`
-replaces a Telegram bot token in a URL path with `/bot***` and blanks the values of eight sensitive query
-keys. 21 unit tests cover it and pass.
+`src/Justina.Core.Infrastructure/Security/SecretScrubber.cs` exists and is wired into both places a
+credential could be recorded:
 
-Two gaps remain, and this case is what closes them:
+| Where | How |
+|---|---|
+| Trace URLs | `options.EnrichWithHttpRequestMessage` overwrites the `url.full` tag with `SecretScrubber.Redact(request.RequestUri)` |
+| HTTP client logged headers | `builder.RedactLoggedHeaders(SecretScrubber.IsSensitiveHeader)` |
 
-- `SecretScrubber.IsSensitiveHeader` is defined and unit-tested but **called from nowhere**. A grep for
-  `Scrub` across `src/` finds a single call site, the OpenTelemetry URL enrichment in `Program.cs`.
-  Header redaction is declared, not applied.
-- Nothing is wired into the Serilog pipeline. There is no destructuring policy and no enricher.
+`Redact` replaces a Telegram bot token in a URL path with `/bot***` and blanks the values of eight
+sensitive query keys. `IsSensitiveHeader` covers `Authorization`, `Proxy-Authorization`,
+`X-Justina-Tool-Key`, `X-Hub-Signature-256` and any header name containing `api-key` or `token`. 21 unit
+tests cover both and pass.
 
-Every log statement was reviewed and none logs a token, key or `Authorization` header. Provider response
-bodies are truncated to 500 characters before logging. So logs are safe **by convention**, not by
-mechanism — there is nothing preventing the next log statement from leaking one.
+**None of that has been observed at runtime.** No log or span produced by a running system carrying real
+credentials has ever been inspected. Unit tests prove the function; this case proves the wiring.
+
+Two things the mechanism does not cover, so keep reading logs with your own eyes:
+
+- Nothing is wired into the Serilog pipeline itself — there is no destructuring policy or enricher. A log
+  statement that interpolates a secret into its message would not be caught.
+- Every log statement was reviewed and none logs a token, key or `Authorization` header, and provider
+  response bodies are truncated to 500 characters before logging. That is discipline, not enforcement.
 
 Run this audit after every change that adds logging.
 
@@ -721,6 +728,6 @@ Reason: ...
 Never record a pass you did not observe. A gap that is written down is a known risk; a gap recorded as a
 pass is an unknown one.
 
-Findings B1 through S5 stay open until a test above closes them. Re-run the whole document after any
+Findings B2 through S5 stay open until a test above closes them (B1 is already closed). Re-run the whole document after any
 change to `Program.cs`, `ToolApiKeyMiddleware`, the decorators, `DocumentProcessor`, `MediaTypeSniffer`,
 the NGINX configuration, or `docker-compose.yml`.

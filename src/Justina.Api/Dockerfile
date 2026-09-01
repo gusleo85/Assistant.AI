@@ -23,9 +23,12 @@ RUN dotnet publish src/Justina.Api/Justina.Api.csproj -c Release -o /app/publish
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
-# PDFium and SkiaSharp need fontconfig and freetype present to rasterize PDF pages.
+# libfontconfig1 / libfreetype6: PDFium and SkiaSharp need them to rasterize PDF pages.
+# curl: the compose health check probes /health/live with it. The aspnet image ships neither curl nor
+# wget, so without this the container never reports healthy and every service that waits on it — OpenClaw
+# included — would never start.
 RUN apt-get update \
-    && apt-get install --no-install-recommends -y libfontconfig1 libfreetype6 \
+    && apt-get install --no-install-recommends -y libfontconfig1 libfreetype6 curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Media is untrusted user content: it lives on its own volume, outside anything the app serves.

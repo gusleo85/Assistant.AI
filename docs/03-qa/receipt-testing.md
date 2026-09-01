@@ -5,7 +5,7 @@ thing end to end and shows how to verify each step in the database rather than t
 
 Covers `TC-RCP-01` .. `TC-RCP-12` from [test-cases.md](test-cases.md).
 
-> These procedures need a running `justina-app` **and a SQL Server instance**. Blocker B1 (invariant
+> These procedures need a running `justina-app` **and a SQL Server instance**. A former blocker (invariant
 > globalization breaking `Microsoft.Data.SqlClient`) has been fixed and re-verified, but no database was
 > ever available during the QA pass, so none of this has been executed. See
 > [test-environment.md](test-environment.md).

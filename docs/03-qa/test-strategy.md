@@ -27,11 +27,11 @@ for p in tests/*/; do dotnet test "$p" --nologo -v q; done
 | Project | Tests | Result |
 |---|---|---|
 | `Justina.ArchitectureTests` | 20 | Passed |
-| `Justina.Core.UnitTests` | 38 | Passed |
-| `Justina.Expense.UnitTests` | 68 | Passed |
+| `Justina.Core.UnitTests` | 51 | Passed |
+| `Justina.Expense.UnitTests` | 75 | Passed |
 | `Justina.IntegrationTests` | 10 | Passed |
 | `Justina.Recruitment.UnitTests` | 7 | Passed |
-| **Total** | **143** | **0 failed, 0 skipped** |
+| **Total** | **163** | **0 failed, 0 skipped** |
 
 The build produced 0 warnings and 0 errors. Warnings are errors in `Directory.Build.props`, so a green
 build genuinely means clean.
@@ -48,7 +48,7 @@ No vulnerable packages in any of the 15 projects.
 
 Fast, isolated, no I/O. These are where the business rules live.
 
-### `tests/Justina.Expense.UnitTests` (68 tests)
+### `tests/Justina.Expense.UnitTests` (75 tests)
 
 The correctness core of the product. Three areas:
 
@@ -71,7 +71,7 @@ different for a different receipt. A failed submission leaves the receipt retrya
 **`ReceiptEditTranslatorTests`** — field synonyms (`total` → amount, `gst`/`vat` → tax), unknown fields
 refused with a usable message, the same field supplied twice refused rather than last-one-wins.
 
-### `tests/Justina.Core.UnitTests` (38 tests)
+### `tests/Justina.Core.UnitTests` (51 tests)
 
 **`DocumentProcessorTests`** — the untrusted-input boundary. Empty content, oversized content rejected
 before parsing, unsupported formats, a file that lies about its MIME type (the sniffed bytes win), a
@@ -86,10 +86,17 @@ without executing again. A failed command is **not** stored, so a transient fail
 **`SecretScrubberTests`** — credential removal from anything that might be recorded. A Telegram bot
 token sitting in a URL **path** is replaced with `/bot***`, and the values of eight sensitive query keys
 (`access_token`, `token`, `api_key`, `apikey`, `key`, `secret`, `password`, `signature`) are blanked.
-The scrubber is wired into the OpenTelemetry HTTP client enrichment in `Program.cs`, so the recorded
-`url.full` span attribute is the scrubbed one. Note two limits: `IsSensitiveHeader` is unit-tested but
-is not called from anywhere in `src/`, and nothing is wired into the Serilog pipeline — see
-[security-testing.md](security-testing.md).
+`IsSensitiveHeader` covers `Authorization`, `X-Justina-Tool-Key`, `X-Hub-Signature-256` and anything
+containing `api-key` or `token`. Both are wired up: the scrubber into the OpenTelemetry HTTP client
+enrichment in `Program.cs`, and `IsSensitiveHeader` into `RedactLoggedHeaders`. The limit worth knowing:
+this is unit-level proof only — no log or span from a running system has ever been inspected, and nothing
+is wired into the Serilog pipeline itself. See [security-testing.md](security-testing.md), SEC-40.
+
+**`ReceiptAccessTests`** — the ownership guard. A receipt in the caller's own conversation is returned;
+one belonging to another conversation is refused, and refused as `not_found` so it is indistinguishable
+from a receipt that does not exist. A caller with no conversation yet can reach nothing. This closes a
+real defect found during the QA pass, where handlers loaded a receipt by id with no ownership check at
+all.
 
 ### `tests/Justina.Recruitment.UnitTests` (7 tests)
 
@@ -195,7 +202,7 @@ cannot be talked past. The manual half proves the agent actually behaves that wa
 Before a manual test pass starts:
 
 - `dotnet build Justina.slnx` succeeds with 0 warnings and 0 errors.
-- All 143 automated tests pass.
+- All 163 automated tests pass.
 - `docker compose config` exits 0.
 - `justina-app` starts and `/health/ready` returns 200. **Never yet observed** — no SQL Server instance
   was available during the QA pass; see

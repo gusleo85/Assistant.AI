@@ -24,6 +24,18 @@ public interface IReceiptAccess
 
     /// <summary>The receipt this conversation is currently working on, if any.</summary>
     Task<Result<Receipt>> GetActiveAsync(RequestContext context, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// An explicitly identified receipt, or the conversation's active one when no id is supplied.
+    ///
+    /// Resolution deliberately lives here rather than at the API edge: it runs inside the handler, which
+    /// means it is behind the authorization decorator. Resolving first would let an unmapped caller learn
+    /// whether a conversation has a receipt in progress before being refused.
+    /// </summary>
+    Task<Result<Receipt>> ResolveAsync(
+        RequestContext context,
+        Guid? receiptId,
+        CancellationToken cancellationToken);
 }
 
 public sealed class ReceiptAccess(
@@ -55,6 +67,14 @@ public sealed class ReceiptAccess(
 
         return Result.Success(receipt);
     }
+
+    public Task<Result<Receipt>> ResolveAsync(
+        RequestContext context,
+        Guid? receiptId,
+        CancellationToken cancellationToken) =>
+        receiptId is { } id
+            ? GetAsync(context, id, cancellationToken)
+            : GetActiveAsync(context, cancellationToken);
 
     public async Task<Result<Receipt>> GetActiveAsync(RequestContext context, CancellationToken cancellationToken)
     {

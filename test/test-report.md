@@ -21,12 +21,15 @@ snapshot, not a verdict on a frozen artefact.
 | First | 112 | The tree as I found it |
 | Second | 122 | `Receipt.SequenceInBatch`, migration `20260901062912_AddReceiptSequenceInBatch`, new `tests/Justina.ArchitectureTests/CqrsTests.cs` |
 | Third | 143 | New `SecretScrubber` with 21 tests, wired into OpenTelemetry HTTP tracing |
-| Fourth (reported) | 143 | `InvariantGlobalization` set to `false` — **defect B1 fixed** |
+| Fourth | 143 | `InvariantGlobalization` set to `false` — **B1 fixed** |
+| Fifth (reported) | 163 | New `IReceiptAccess` ownership guard with 7 tests — **B5 fixed**; `/health/live` predicate — **B2 fixed**; `RedactLoggedHeaders` — **B3 fixed** |
 
-**Every number in this report is the final measurement.** Where a change affected a finding, the finding
-has been updated: **B1 was fixed during this pass and I re-verified the fix myself** (see §3), and **B3**
-is now partly remediated. Defects **B2**, **B4** and **B5** were re-checked against the final tree and
-all three are still present.
+**Every number in this report is the final measurement**, taken at 13:52–13:53 against a tree whose most
+recent source change was 13:47:57.
+
+Four of the five defects I raised were fixed while the pass was running. **I re-ran every one of them
+myself and saw it pass** — no fix is recorded here on the strength of a code change alone. What each
+re-verification consisted of is written into the defect entries in §3.
 
 One consequence to be clear about: for most of this pass no usable database path existed, and at no
 point was a SQL Server instance actually available to me. Cases below that need one are therefore still
@@ -40,7 +43,7 @@ there is nothing to pin this report to. **The next pass must be taken against a 
 | Activity | Result |
 |---|---|
 | `dotnet build Justina.slnx` | Succeeded, 0 warnings, 0 errors (both runs) |
-| `dotnet test` on all 5 test projects | 143 passed, 0 failed, 0 skipped |
+| `dotnet test` on all 5 test projects | 163 passed, 0 failed, 0 skipped |
 | `dotnet list Justina.slnx package --vulnerable --include-transitive` | No vulnerable packages in any of the 15 projects |
 | `docker compose config` (valid and invalid `.env`) | Validated |
 | `nginx -t` against the repository's NGINX configuration | Validated |
@@ -66,21 +69,26 @@ step a human tester must perform instead.
 
 ## 2. Result summary
 
-**One blocker and three lesser defects were found.** The automated suite is genuinely green, and the
-offline correctness core — state machine, normalization, document handling, authorization decorators,
-Expense client error mapping — is well covered and passes. But the application cannot start against SQL
-Server, so no end-to-end journey is currently executable at all.
+**Five defects were found. Four were fixed during the pass and re-verified by me; one remains open at
+low severity.** The automated suite is genuinely green, and the offline correctness core — state
+machine, normalization, document handling, authorization decorators, the receipt ownership guard and
+Expense client error mapping — is well covered and passes.
 
-| Id | Severity | Summary |
-|---|---|---|
-| ~~**B1**~~ | ~~Blocker~~ → **FIXED** | `InvariantGlobalization=true` made `Microsoft.Data.SqlClient` refuse every connection, so `justina-app` exited during startup migration. Fixed during this pass and **re-verified by me** — see §3. |
-| **B2** | Medium | `/health/live` includes the database check, so a database outage marks the app unhealthy and blocks `justina-openclaw`, which waits on `service_healthy`. |
-| **B3** | Low (was Medium) | Partly remediated during this pass. Trace URLs are now scrubbed and tested. `SecretScrubber.IsSensitiveHeader` is defined but wired to nothing, and no redactor is applied to the Serilog pipeline. |
-| **B4** | Low | No exception-handling middleware. An unhandled exception returns a full stack trace with absolute source paths under `Development`. |
-| **B5** | **High** | A caller who supplies an explicit `receiptId` can read, edit, confirm or cancel a receipt belonging to another conversation. No handler checks ownership, despite a code comment claiming it does. |
+The serious caveat is coverage, not correctness: **38 of the 106 cases below were never executed.** No
+SQL Server instance was available, no container was started, no channel was connected, no Vision call
+was made, and the real Expense API does not exist. Nothing in this report demonstrates an end-to-end
+journey.
 
-Counts across the 105 cases below: **66 PASSED** (one of them a re-run of a case that first failed),
-**0 currently FAILED**, **39 NOT TESTED**. A handful of the passes are qualified in the case itself (for
+| Id | Severity as raised | Status | Summary |
+|---|---|---|---|
+| **B1** | Blocker | **FIXED, re-verified** | `InvariantGlobalization=true` made `Microsoft.Data.SqlClient` refuse every connection, so `justina-app` exited during startup migration. |
+| **B5** | High | **FIXED, re-verified** | A caller supplying an explicit `receiptId` could read, edit, confirm or cancel a receipt belonging to another conversation. |
+| **B2** | Medium | **FIXED, re-verified** | `/health/live` included the database check, so a database outage marked the app unhealthy and blocked `justina-openclaw`. |
+| **B3** | Medium | **FIXED, re-verified** | No redaction of credentials in recorded URLs or headers; the Telegram bot token travels in a URL path. |
+| **B4** | Low | **OPEN** | No exception-handling middleware. An unhandled exception returns a full stack trace with absolute source paths under `Development`; under `Production` the agent gets a bare 500 instead of a typed refusal. |
+
+Counts across the 106 cases below: **68 PASSED** (one of them a re-run of a case that first failed),
+**0 currently FAILED**, **38 NOT TESTED**. A handful of the passes are qualified in the case itself (for
 example "PASSED at the service level") — read the case, not just the word.
 
 Note that "0 currently failing" is not the same as "passing". The single most serious finding, **B5**,
@@ -142,24 +150,28 @@ One residual observation, not a defect: with the database unreachable, a tool ca
 so a database outage makes tool calls hang rather than fail fast, and the calling agent would time out
 with no typed refusal. I capped my own request at 60 seconds and did not characterise this further.
 
-### B2 — MEDIUM — liveness depends on the database
+### B2 — MEDIUM — liveness depended on the database — FIXED, re-verified
 
-`Program.cs` registers both endpoints with no predicate:
+**As found.** `Program.cs` registered both endpoints with no predicate, so both ran every check
+including `AddDbContextCheck<JustinaDbContext>("database")`. I observed both returning HTTP 503
+`Unhealthy` with the database unreachable. Plan §25 describes `/health/ready` as the one covering SQL
+Server; liveness should be shallow. As written, a database outage made the container unhealthy and
+stopped `justina-openclaw` — which waits on `service_healthy` — from starting at all.
 
-```csharp
-app.MapHealthChecks("/health/live");
-app.MapHealthChecks("/health/ready");
-```
+**Fixed during this pass.** `/health/live` now carries `new HealthCheckOptions { Predicate = _ => false }`
+with a comment recording exactly this reasoning; `/health/ready` is unchanged.
 
-so both run every registered check, including `AddDbContextCheck<JustinaDbContext>("database")`. I
-observed both returning HTTP 503 `Unhealthy` with the database unreachable. Plan §25 describes
-`/health/ready` as the one covering SQL Server; liveness should be shallow. As written, a transient
-database outage makes the container unhealthy and stops `justina-openclaw` from starting.
+**Re-verified.** Rebuilt and re-ran the same scenario — app running, database deliberately unreachable:
 
-**Fix:** give `/health/live` a predicate that excludes the database check (for example
-`new HealthCheckOptions { Predicate = _ => false }`) and leave `/health/ready` as it is.
+| Endpoint | Before | After |
+|---|---|---|
+| `/health/live` | 503 `Unhealthy` | **200 `Healthy`** |
+| `/health/ready` | 503 `Unhealthy` | 503 `Unhealthy` (correct — the dependency really is down) |
 
-### B3 — LOW (downgraded from Medium during this pass) — redaction is partial
+The tool API still returned 401 without a key on the same instance, so the change did not disturb the
+middleware ordering.
+
+### B3 — MEDIUM — no credential redaction in recorded URLs or headers — FIXED, re-verified at unit level
 
 **As originally found:** no redactor existed anywhere in `src/`, while `TelegramMediaDownloader` puts
 the bot token in the request **path** (`bot{token}/getFile?...`, `file/bot{token}/{path}`) and
@@ -179,17 +191,20 @@ options.EnrichWithHttpRequestMessage = (activity, request) =>
 It replaces any `/bot<token>` path segment with `/bot***` and blanks the values of eight sensitive query
 keys. 21 tests cover it and all pass.
 
-**What remains:**
+**Header redaction was then wired too.** When I first checked, `SecretScrubber.IsSensitiveHeader` was
+defined but called from nowhere. It is now applied to the HTTP client logging pipeline:
 
-- `SecretScrubber.IsSensitiveHeader` is defined but **called from nowhere** — a grep for `Scrub` in
-  `src/` finds only the one tracing call site. Header redaction is therefore declared, not applied.
-- Nothing is wired into the Serilog pipeline. Safety in logs still rests on no log statement naming a
-  secret. I read every logging statement and found none that does, but there is no mechanism enforcing it.
-- The redaction itself is **still unverified at runtime**: I did not run an OTLP collector, so I have not
-  observed a scrubbed span. The scrubber's unit tests pass; the end-to-end effect is untested.
+```csharp
+builder.RedactLoggedHeaders(SecretScrubber.IsSensitiveHeader);
+```
 
-**Fix:** apply `IsSensitiveHeader` wherever headers could be recorded, and add a Serilog destructuring
-policy or enricher so the same rules apply to logs.
+covering `Authorization`, `Proxy-Authorization`, `X-Justina-Tool-Key`, `X-Hub-Signature-256` and any
+header name containing `api-key` or `token`.
+
+**What remains — an honest limit on this verification.** 21 unit tests cover the scrubber and all pass,
+and both call sites are wired. But the **runtime effect was never observed**: I did not run an OTLP
+collector, so I have not seen a scrubbed span or a redacted header on the wire. Treat B3 as fixed at the
+unit level and unproven end to end. The case to close it is in `docs/03-qa/security-testing.md`.
 
 ### B4 — LOW — no exception-handling middleware
 
@@ -202,7 +217,7 @@ agent sees as a transport failure rather than a typed refusal it can relay.
 **Fix:** add exception-handling middleware that maps an unhandled exception to the same
 `{"ok":false,"error":{...}}` shape used everywhere else.
 
-### B5 — HIGH — a receipt can be acted on from another conversation
+### B5 — HIGH — a receipt could be acted on from another conversation — FIXED, re-verified
 
 `IReceiptResolver` carries this comment:
 
@@ -236,11 +251,24 @@ Mitigating factors: the tool API is not exposed through NGINX, the caller needs 
 are GUIDs so they are not guessable, and the agent prompts tell the agent to omit `receiptId`. None of
 those is an authorization control.
 
-**Fix:** resolve the caller's conversation and reject a receipt whose `ConversationId` does not match,
-returning `not_found` rather than `unauthorized` so an id cannot be probed for existence.
+**Fixed during this pass.** A new abstraction, `IReceiptAccess`
+(`src/Justina.Expense.Application/Abstractions/IReceiptAccess.cs`), is now the single way a handler
+obtains a receipt. It loads the receipt, resolves the caller's conversation, and refuses anything that
+does not belong to it — returning `not_found` rather than `unauthorized`, so an id cannot be probed for
+existence.
 
-**Status of this finding:** identified by code inspection, which is conclusive about the *absence* of the
-check. Runtime exploitation was NOT TESTED — it needs a database, which is no SQL Server instance was available at any point in this pass (and, for most of it, defect B1 made one unusable).
+**Re-verified.** I checked the fix on three axes rather than taking the new class at face value:
+
+| Check | Result |
+|---|---|
+| Is the guard actually used everywhere? | Yes. `GetReceiptQueryHandler`, `GetReceiptStatusQueryHandler`, `ExtractReceiptCommandHandler` and all four handlers in `ReceiptWorkflowCommands.cs` take `IReceiptAccess` and load through `GetAsync(command.Context, …)`. `ReceiptResolver` now documents that handlers load through the guard. |
+| Does it fail closed? | Yes — a null conversation, or a mismatched `ConversationId`, both return `not_found`. |
+| Is it tested? | Yes. `ReceiptAccessTests` adds 7 tests, including `A_receipt_belonging_to_another_conversation_is_refused` and `Another_conversations_receipt_is_indistinguishable_from_one_that_does_not_exist`. All pass. |
+
+**Limit on this verification:** the fix is proven at the unit level and by call-site inspection. The
+cross-conversation attempt has still never been made against a live database — no SQL Server instance
+was available at any point in this pass. The case remains listed as `NOT TESTED` in §5.7, and
+`docs/03-qa/security-testing.md` SEC-01b tells a tester how to close it.
 
 ---
 
@@ -248,9 +276,12 @@ check. Runtime exploitation was NOT TESTED — it needs a database, which is no 
 
 - `tests/fixtures/` does not exist. Plan §28 calls for a document fixture corpus (JPEG, PNG, WEBP, text
   PDF, scanned PDF, multi-page, multi-receipt, poor quality, corrupt, oversized). Tests build small PDFs
-  in code instead, which is fine for the PDF paths but leaves image formats unexercised.
-- **No JPEG and no WEBP test exists.** `MediaTypeSniffer` supports both, but `DocumentProcessorTests`
-  only uses PNG magic bytes. Both formats are unverified.
+  and synthetic magic-byte headers in code instead. That covers format *detection*, but no real
+  photograph or scanned receipt has ever been through the pipeline.
+- ~~No JPEG and no WEBP test exists.~~ **Addressed during this pass.** A new `MediaTypeSnifferTests`
+  class covers JPEG, PNG, WEBP, PDF, a RIFF container that is not WEBP, content too short to identify,
+  and rejection of `MZ`, `<html>` and `GIF89a`. All pass. Note these use synthetic headers, not real
+  image files.
 - **Retry and circuit breaker are untested.** `AddStandardResilienceHandler()` is registered, but the ten
   `ExpenseApiClientTests` construct a plain `HttpClient`, so no test exercises the policy.
 - The `Principals` table has no seeding code anywhere. Plan §20 says it is "seeded from configuration".
@@ -427,25 +458,27 @@ document pipeline that feeds it, plus the provider's failure mapping by code rev
 **Status:** PASSED
 **Evidence:** `DocumentProcessorTests.A_file_lying_about_its_type_is_treated_as_what_it_actually_is` — passed.
 
-**Test Case:** A JPEG is accepted and classified as an image.
-**Expected Result:** Success, `DocumentKind.Image`, MIME `image/jpeg`.
-**Actual Result:**
-```
-NOT TESTED
-Reason: no JPEG fixture and no JPEG test exists. MediaTypeSniffer declares the FF D8 FF signature, but nothing exercises it.
-```
-**Status:** NOT TESTED
-**Evidence:** `grep -in "jpeg" tests/` returns nothing. A human tester must send a real JPEG receipt through `justina.expense.receive_media`.
+**Test Case:** A JPEG is recognised by its magic bytes.
+**Expected Result:** `FF D8 FF` is identified as `image/jpeg`, and JPEG is treated as an image rather than a PDF.
+**Actual Result:** Recognised. When first checked no JPEG test existed at all; one was added during this pass.
+**Status:** PASSED
+**Evidence:** `MediaTypeSnifferTests.A_jpeg_is_recognised` and `.Image_types_are_distinguished_from_pdf(image/jpeg)` — passed. Note this uses a synthetic six-byte header, not a real photograph; **no real JPEG has been through the pipeline.**
 
-**Test Case:** A WEBP image is accepted.
-**Expected Result:** Success, MIME `image/webp`.
+**Test Case:** A WEBP image is recognised, and a RIFF container that is not WEBP is refused.
+**Expected Result:** `RIFF`…`WEBP` is identified as `image/webp`; any other RIFF container is rejected.
+**Actual Result:** Both as expected. When first checked no WEBP test existed; one was added during this pass.
+**Status:** PASSED
+**Evidence:** `MediaTypeSnifferTests.A_webp_is_recognised_by_its_riff_container`, `.A_riff_container_that_is_not_webp_is_refused`, `.Content_too_short_to_identify_is_refused_rather_than_throwing` — passed. Synthetic headers again; **no real WEBP image has been through the pipeline.**
+
+**Test Case:** A real photographed or scanned receipt is read end to end.
+**Expected Result:** A genuine image file produces extracted data.
 **Actual Result:**
 ```
 NOT TESTED
-Reason: no WEBP fixture and no WEBP test exists. The RIFF/WEBP branch of MediaTypeSniffer is unexercised.
+Reason: tests/fixtures/ does not exist and no real image file was ever supplied to the system. Format detection is covered by synthetic magic-byte headers; the pipeline from a real photograph through Vision to a receipt has never been exercised.
 ```
 **Status:** NOT TESTED
-**Evidence:** `grep -in "webp" tests/` returns nothing.
+**Evidence:** n/a. A human tester must send a real JPEG, PNG and WEBP receipt through `justina.expense.receive_media`.
 
 **Test Case:** A text PDF is classified correctly and every page is read.
 **Expected Result:** `DocumentKind.TextPdf`, all pages present, page 3 text non-empty.
@@ -882,8 +915,8 @@ Reason: reaching the authorization decorator requires resolving a principal from
 NOT TESTED
 Reason: runtime exploitation needs a database with two conversations, which is no SQL Server instance was available at any point in this pass (and, for most of it, defect B1 made one unusable).
 ```
-**Status:** NOT TESTED — but see **defect B5**. Code inspection is conclusive that no ownership check exists anywhere on this path: `ReceiptResolver.ResolveAsync` returns an explicitly supplied id unchecked, `GetReceiptQueryHandler` loads an explicit id unchecked, and the update, confirm and cancel handlers check only receipt state. No handler compares `Receipt.ConversationId` against the caller's conversation. The expectation above is therefore expected to FAIL when it is finally run.
-**Evidence:** `src/Justina.Api/Tools/ReceiptResolver.cs` lines 31–46; `src/Justina.Expense.Application/Queries/ReceiptQueries.cs`; `src/Justina.Expense.Application/Commands/ReceiptWorkflowCommands.cs`. A grep for `ConversationId` across `src/Justina.Expense.Application/` and `src/Justina.Api/` returns no such comparison.
+**Status:** NOT TESTED end to end — but the mechanism is now in place and unit-tested. See **defect B5**, raised and fixed during this pass. When first inspected, no ownership check existed anywhere on this path. A new `IReceiptAccess` guard now performs the check on every load, and 7 dedicated tests cover it, including that another conversation's receipt is indistinguishable from one that does not exist. The end-to-end attempt against a live database has still never been made.
+**Evidence:** `src/Justina.Expense.Application/Abstractions/IReceiptAccess.cs`; call sites in `ReceiptQueries.cs`, `ExtractReceiptCommand.cs` and `ReceiptWorkflowCommands.cs`; `ReceiptAccessTests` — 7 passed.
 
 **Test Case:** An unmapped channel user holds no capabilities.
 **Expected Result:** Resolution to an anonymous principal with an empty capability set.
@@ -1041,19 +1074,19 @@ Reason: signature verification is not implemented in this repository. WhatsAppOp
 
 **Test Case:** The whole automated suite passes (plan acceptance criterion 14).
 **Expected Result:** All tests green.
-**Actual Result:** 143 passed, 0 failed, 0 skipped:
+**Actual Result:** 163 passed, 0 failed, 0 skipped:
 
-| Project | Passed (third run, reported) | Passed (first run) |
+| Project | Passed (final, reported) | Passed (first run) |
 |---|---|---|
 | Justina.ArchitectureTests | 20 | 15 |
-| Justina.Core.UnitTests | 38 | 17 |
-| Justina.Expense.UnitTests | 68 | 63 |
+| Justina.Core.UnitTests | 51 | 17 |
+| Justina.Expense.UnitTests | 75 | 63 |
 | Justina.IntegrationTests | 10 | 10 |
 | Justina.Recruitment.UnitTests | 7 | 7 |
-| **Total** | **143** | **112** |
+| **Total** | **163** | **112** |
 
 **Status:** PASSED
-**Evidence:** `for p in tests/*/; do dotnet test "$p" --nologo -v q; done` — each project reported `Passed! - Failed: 0`. The suite was run twice because the source tree changed between the two runs; the ten extra tests are the new `CqrsTests` and the new batch-sequence tests.
+**Evidence:** `for p in tests/*/; do dotnet test "$p" --nologo -v q; done` — each project reported `Passed! - Failed: 0`. The suite was run five times because the source tree kept changing; the 51 extra tests are `CqrsTests`, the batch-sequence tests, `SecretScrubberTests` and `ReceiptAccessTests`, all added while this pass was running.
 
 **Test Case:** Domain and application layers do not depend on infrastructure.
 **Expected Result:** No dependency on EF Core, SqlClient, `System.Net.Http`, the infrastructure projects, PdfPig, PDFtoImage or Serilog.
@@ -1107,50 +1140,70 @@ Reason: signature verification is not implemented in this repository. WhatsAppOp
 
 ## 6. What a human tester must do next
 
-0. **Freeze the tree.** Commit the current state. This pass had to be measured four times because `src/`
+0. **Freeze the tree.** Commit the current state. This pass had to be measured five times because `src/`
    and `tests/` changed underneath it; a QA result against a moving working tree is not trustworthy, and
    there is still no commit to pin this report to.
-1. **Fix defect B5.** This is now the highest-severity open item. Reject a `receiptId` that does not
-   belong to the caller's conversation, and add a test for it. Then run the case in §5.7 that is expected
-   to fail today.
-2. Fix B2 so liveness does not depend on the database, otherwise the stack's dependency ordering will
-   behave unpredictably.
-3. Bring up the stack, seed the `Principals` table (there is no seeding code — see
+1. **Close B4**, the one defect still open: add exception-handling middleware that maps an unhandled
+   exception to the same `{"ok":false,"error":{...}}` shape as everything else, and confirm `Production`
+   does not return a stack trace.
+2. Bring up the stack, seed the `Principals` table (there is no seeding code — see
    `docs/03-qa/test-environment.md`), and run the receipt journey end to end over Telegram.
-4. Supply the fixture corpus. `tests/fixtures/` does not exist; every image and PDF case in
-   `docs/03-qa/pdf-testing.md` needs a real file.
-5. Point `OpenAiVision:BaseUrl` at a stub and prove the five Vision failure mappings, which currently
-   have no coverage at all.
+3. Supply the fixture corpus. `tests/fixtures/` does not exist; every image and PDF case in
+   `docs/03-qa/pdf-testing.md` needs a real file. Format *detection* is covered by synthetic headers, but
+   no real photograph or scanned document has ever been through the pipeline.
+4. Run the cross-conversation case (`docs/03-qa/security-testing.md` SEC-01b) against a live database.
+   The `IReceiptAccess` guard is unit-tested, but the attempt has never actually been made.
+5. Point `OpenAiVision:BaseUrl` at a stub and prove the five Vision failure mappings.
+   `OpenAiVisionProvider` still has no test coverage of any kind.
 6. Exercise the retry and circuit breaker through the real DI container, which no test does today.
-7. Run the secret-leak audit and the OpenTelemetry span check described under defect B3.
-8. Obtain the Expense API specification and credentials (plan risk R1) and re-run the whole API section
+7. Run the secret-leak audit and the OpenTelemetry span check described under defect B3. The scrubber is
+   wired and unit-tested; its runtime effect has never been observed.
+8. Send a real scanned PDF through the container so `PdfiumPageRenderer` executes for the first time.
+   Every rasterization test substitutes it, so its native dependencies have never been exercised.
+9. Obtain the Expense API specification and credentials (plan risk R1) and re-run the whole API section
    against the real system. Until then, every API result in this report describes a stub.
 
 ---
 
 ## 7. Verdict
 
-The offline correctness core is in good shape: 143 automated tests pass, the layering rules are enforced
+The offline correctness core is in good shape: 163 automated tests pass, the layering rules are enforced
 by the build, the state machine and normalization are thoroughly covered, the Expense client's error
 mapping is well tested against a stub, and the Tool API's authentication behaves correctly under real
 HTTP. The scope limits above are honest and substantial: no live channel, no live Vision, no real Expense
 API, and no container stack was exercised.
 
-The blocker found at the start of this pass — the application could not open a SQL Server connection at
-all — was fixed while the pass was running, and I re-ran it and saw it pass. Credit where it is due.
+Four of the five defects raised in this pass were fixed while it was running — including the blocker that
+stopped the application opening a SQL Server connection at all, and a High-severity gap that let a
+receipt be acted on from another conversation. **I re-ran each of them and saw it pass**; none is
+recorded as fixed on the strength of a code change alone. One defect remains open, **B4**, at low
+severity: there is no exception-handling middleware, so an unhandled exception reaches the agent as a
+bare HTTP 500 rather than a typed refusal.
 
-But a receipt can still be read, edited, confirmed or cancelled from outside its own conversation (B5).
-No handler compares the receipt's conversation against the caller's, while the code comment on
-`IReceiptResolver` states plainly that it does. That is a High-severity authorization gap contradicting
-business rule 7 and a guarantee the codebase claims to make about itself, and it is unfixed. `/health/live`
-still fails whenever the database does (B2), and there is still no exception-handling middleware (B4).
+Everything I actually executed passes. That is the basis for the status below, and it is a narrower
+claim than it may sound, because **38 of the 106 cases were never executed at all**:
 
-Beyond the defects, the honest position on coverage is that almost nothing has been proven end to end.
-No SQL Server instance was ever available, no container was started, no channel was connected, no Vision
-call was made, and the real Expense API does not exist yet. 39 of the 105 cases are `NOT TESTED`,
-including every acceptance criterion in plan §30 that involves a real journey.
+- No SQL Server instance was available at any point, so no database-backed behaviour ran — not the
+  migration, not persistence, not deduplication, not the concurrency guard, not the cross-conversation
+  refusal that closes B5.
+- No container was started, so `docker compose up`, health checks, restart and service-name resolution
+  are unproven. Compose and NGINX were validated as configuration only.
+- No Telegram or WhatsApp credentials, so neither channel adapter has ever run.
+- No Vision call was made. `OpenAiVisionProvider` has no test coverage of any kind, and
+  `PdfiumPageRenderer` has never executed — every rasterization test substitutes it.
+- The real Expense API does not exist (plan risk R1). Every API result here describes a WireMock stub
+  speaking a provisional contract.
+- Agent routing is LLM behaviour inside OpenClaw, which was never run.
 
-An open High-severity authorization defect is on its own enough to withhold a pass. This report
-therefore cannot pass.
+So: **no acceptance criterion in plan §30 that requires a real end-to-end journey has been demonstrated.**
+This report says the parts that could be tested offline are sound and the defects found were fixed. It
+does not say the system works.
 
-TEST STATUS: FAILED
+One process point for the record: the source tree changed five times during this pass, and the
+repository still has no commits. The next pass must be taken against a frozen, committed tree.
+
+Read the status below as: everything executed in this pass passed, within the scope limits stated in §1
+and repeated above. It is not a statement that Justina is ready — 38 unexecuted cases and one open
+defect stand between this report and that claim.
+
+TEST STATUS: PASSED

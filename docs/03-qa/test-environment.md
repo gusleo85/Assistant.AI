@@ -130,7 +130,7 @@ dotnet build Justina.slnx
 for p in tests/*/; do dotnet test "$p" --nologo -v q; done
 ```
 
-Expected: 143 tests pass across 5 projects, 0 failed, 0 skipped. Build produces 0 warnings and
+Expected: 163 tests pass across 5 projects, 0 failed, 0 skipped. Build produces 0 warnings and
 0 errors — warnings are errors, so anything less than clean is a real problem.
 
 Dependency scan:
@@ -319,10 +319,11 @@ docker compose ps
 docker compose logs -f justina-app
 ```
 
-Expect this to fail today because of blocker B1. When B1 is fixed, the startup order is:
+This has never been run by anyone. The blocker that used to make it impossible is fixed, so it should now
+be attempted. The expected startup order is:
 
 1. `justina-sqlserver` starts and becomes healthy (up to ~40 s start period, then `sqlcmd SELECT 1`).
-2. `justina-app` starts, applies the `InitialSchema` EF migration, and becomes healthy on
+2. `justina-app` starts, applies the EF migrations (`InitialSchema` and `AddReceiptSequenceInBatch`), and becomes healthy on
    `/health/live`.
 3. `justina-openclaw` starts once `justina-app` is healthy.
 4. `justina-nginx` starts once `justina-openclaw` has started.

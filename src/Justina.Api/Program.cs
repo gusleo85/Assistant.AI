@@ -41,7 +41,6 @@ builder.Services.AddRecruitmentApplication();
 builder.Services.AddRecruitmentInfrastructure(builder.Configuration);
 
 builder.Services.AddScoped<RequestContextFactory>();
-builder.Services.AddScoped<IReceiptResolver, ReceiptResolver>();
 builder.Services.AddHostedService<MediaCleanupService>();
 
 builder.Services.AddHealthChecks()
@@ -104,6 +103,13 @@ static async Task MigrateDatabaseAsync(WebApplication app)
     {
         await context.Database.MigrateAsync().ConfigureAwait(false);
         logger.LogInformation("Database schema is up to date");
+
+        // An unmapped user holds no capabilities, so without this a fresh environment has nobody who can
+        // do anything. Seeding is configuration-driven and idempotent (§20).
+        await scope.ServiceProvider
+            .GetRequiredService<PrincipalSeeder>()
+            .SeedAsync(CancellationToken.None)
+            .ConfigureAwait(false);
     }
     catch (Exception exception)
     {

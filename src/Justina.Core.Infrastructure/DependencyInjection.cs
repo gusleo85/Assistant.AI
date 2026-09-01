@@ -34,6 +34,7 @@ public static class CoreInfrastructureServiceCollectionExtensions
         services.Configure<OpenAiVisionOptions>(configuration.GetSection(OpenAiVisionOptions.SectionName));
         services.Configure<TelegramOptions>(configuration.GetSection(TelegramOptions.SectionName));
         services.Configure<WhatsAppOptions>(configuration.GetSection(WhatsAppOptions.SectionName));
+        services.Configure<PrincipalSeedOptions>(configuration.GetSection(PrincipalSeedOptions.SectionName));
 
         services.AddDbContext<JustinaDbContext>((provider, builder) =>
             builder.UseSqlServer(
@@ -51,6 +52,7 @@ public static class CoreInfrastructureServiceCollectionExtensions
         services.AddScoped<IIdempotencyStore, SqlServerIdempotencyStore>();
         services.AddScoped<IInboundMessageDeduplicator, SqlServerInboundMessageDeduplicator>();
         services.AddScoped<IAuthorizationService, AuthorizationService>();
+        services.AddScoped<PrincipalSeeder>();
 
         services.AddSingleton<IMediaStore, FileSystemMediaStore>();
         services.AddSingleton<IPdfPageRenderer, PdfiumPageRenderer>();

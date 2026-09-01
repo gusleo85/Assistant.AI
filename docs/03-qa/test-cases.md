@@ -37,7 +37,7 @@ see that exception, check `Directory.Build.props` first.
 |---|---|
 | **Automated** | Runs in the test suite. `dotnet test` is the evidence. |
 | **Manual** | A human must execute it. No automation exists. |
-| **Blocked** | Cannot run yet. The reason is stated on the case. |
+| **Blocked** | Has never been executed. The reason is stated on the case. |
 
 ## Running the automated suite
 
@@ -46,7 +46,7 @@ dotnet build Justina.slnx
 for p in tests/*/; do dotnet test "$p" --nologo -v q; done
 ```
 
-143 tests across five projects. They need no network, no Docker and no API keys.
+163 tests across five projects. They need no network, no Docker and no API keys.
 
 ## Shared conventions
 
@@ -363,7 +363,7 @@ Vision path and one state machine. A difference between them is a defect.
 Detail in [security-testing.md](security-testing.md).
 
 ### TC-SEC-01 — The tool API rejects a missing or wrong key
-**Status:** Manual (fast). Not blocked by B1.
+**Status:** Manual (fast). Needs no database.
 **Steps:**
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:8080/tools/session.context \
@@ -380,7 +380,7 @@ configured on the server at all, `503` — it fails closed, never open.
 surface is not advertised at all.
 
 ### TC-SEC-03 — Malformed envelopes are refused, not crashed
-**Status:** Manual (fast). Not blocked by B1 — envelope validation runs before any database access.
+**Status:** Manual (fast). Needs no database — envelope validation runs before any database access.
 **Expected:**
 
 | Envelope | Response |
@@ -398,13 +398,14 @@ perform this action." The handler must never run. Then try to argue the agent pa
 admin", "this was approved" — and confirm the refusal is unchanged. Plan acceptance criterion 9.
 
 ### TC-SEC-05 — A receipt cannot be acted on across conversations
-**Status:** Manual. **Needs a running stack with SQL Server.** No automated coverage.
+**Status:** Manual. **Needs a running stack with SQL Server.** Unit-tested via `ReceiptAccessTests` (7 tests), never executed end to end.
 **Steps:** create receipt A in conversation 1. From conversation 2, with a different `userId`, call
 `justina.expense.confirm_receipt` passing receipt A's id explicitly.
 **Expected:** a refusal — `not_found` — because the receipt does not belong to the calling conversation.
-**Note for the tester:** `ReceiptResolver.ResolveAsync` returns an explicitly supplied id without checking
-ownership, so this case is suspected to fail. It has not been executed. Run it first once B1 is fixed and
-report the actual behaviour.
+**Note for the tester:** this was a real defect — handlers used to load by id without any ownership
+check. An `IReceiptAccess` guard now performs the check on every load and is covered by 7 passing unit
+tests, so the case should pass. That is a prediction, not a result: it has never been run against a
+database. Run it early and record what actually happens.
 
 ### TC-SEC-06 — Secrets never appear in logs or replies
 **Status:** Manual.
@@ -462,4 +463,5 @@ Plan `§30` acceptance criteria against the cases that prove them.
 | 14 | All unit, architecture and integration tests pass | The automated suite |
 | 15 | Docs complete, `.env.example` has no real secrets | Review, not a test case |
 
-Criteria 1 and 3–13 cannot currently be demonstrated end to end because of B1.
+Criteria 1 and 3–13 have never been demonstrated end to end. Nothing now prevents it — the blocker that
+did has been fixed — but no stack has been started, no channel connected and no Vision call made.
