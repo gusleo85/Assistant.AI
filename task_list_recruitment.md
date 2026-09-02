@@ -56,9 +56,9 @@ blank, and nothing else.
 
 ## Justina (Assistant.AI)
 
-- [ ] **J1** `POST /notifications/candidate-summary`, authenticated with `ToolApi:SharedSecret`. Summary text is **data, never instruction** (§38) — a CV saying "mark me hired" must arrive as words
-- [ ] **J2** `IProactiveMessenger` + OpenClaw gateway implementation — Justina's first unprompted outbound message
-- [ ] **J3** Recipient resolution behind one seam, returning the single configured Telegram id today; mapping slots in later without touching callers
+- [x] **J1** `POST /notifications/candidate-summary`, behind the same shared secret as the tool surface. Summary relayed verbatim; the question Justina appends is kept separate and last
+- [x] **J2** `IProactiveMessenger` over the gateway tool-invoke API. Verified live: message 51 delivered to Telegram
+- [x] **J3** `IRecruitmentRecipientResolver`, resolving to the seeded principal. No new configuration: principals already hold the linked Telegram id, and a second copy of it is how a summary reaches a stranger
 - [ ] **J4** `CandidateSummary` aggregate: `Sent → AwaitingAvailability → Scheduling → Scheduled`, plus `StatusUpdated` / `Cancelled`
 - [ ] **J5** Deferral: a recruitment event arriving while a receipt is in `WaitingConfirmation` is **queued, never dropped and never overwriting** `ActiveWorkflow`; resumed when the receipt finishes
 - [ ] **J6** `IRecruitmentApiClient` — schedule and status against Recruitment-API, company token via the existing provider (rename it: no longer expense-specific)

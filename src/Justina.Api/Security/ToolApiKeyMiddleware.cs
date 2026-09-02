@@ -23,10 +23,13 @@ public sealed class ToolApiKeyMiddleware(RequestDelegate next, ToolApiOptions op
 
     public async Task InvokeAsync(HttpContext context)
     {
-        // Both transports into the tool surface are guarded: /tools (REST) and /mcp (what OpenClaw uses).
+        // Every transport into the tool surface is guarded: /tools (REST), /mcp (what OpenClaw uses),
+        // and /notifications — the inbound door other JustLogin services use to tell Justina something
+        // happened. That one carries no user's authority and is not a place to invent a second scheme.
         var isToolSurface =
             context.Request.Path.StartsWithSegments("/tools", StringComparison.OrdinalIgnoreCase)
-            || context.Request.Path.StartsWithSegments("/mcp", StringComparison.OrdinalIgnoreCase);
+            || context.Request.Path.StartsWithSegments("/mcp", StringComparison.OrdinalIgnoreCase)
+            || context.Request.Path.StartsWithSegments("/notifications", StringComparison.OrdinalIgnoreCase);
 
         if (!isToolSurface)
         {

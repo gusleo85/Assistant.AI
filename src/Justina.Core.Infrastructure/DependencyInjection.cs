@@ -53,7 +53,31 @@ public static class CoreInfrastructureServiceCollectionExtensions
         services.AddScoped<IIdempotencyStore, SqlServerIdempotencyStore>();
         services.AddScoped<IInboundMessageDeduplicator, SqlServerInboundMessageDeduplicator>();
         services.AddScoped<IAuthorizationService, AuthorizationService>();
+        services.AddScoped<IPrincipalDirectory, PrincipalDirectory>();
         services.AddScoped<PrincipalSeeder>();
+
+        // Messages nobody asked for. Registered whether or not a gateway is configured: an unconfigured
+        // one refuses with a clear reason, which is easier to diagnose than a service that will not
+        // resolve at startup.
+        services.Configure<OpenClawGatewayOptions>(
+            configuration.GetSection(OpenClawGatewayOptions.SectionName));
+
+        services
+            .AddHttpClient<IProactiveMessenger, OpenClawProactiveMessenger>((provider, client) =>
+            {
+                var gateway = provider.GetRequiredService<IOptions<OpenClawGatewayOptions>>().Value;
+
+                if (!string.IsNullOrWhiteSpace(gateway.BaseUrl))
+                {
+                    client.BaseAddress = new Uri($"{gateway.BaseUrl.TrimEnd('/')}/");
+                }
+
+                client.Timeout = TimeSpan.FromSeconds(gateway.TimeoutSeconds);
+            });
+
+        // No retry handler here, deliberately. A retried send is a second message on someone's phone,
+        // and the gateway answers 200 for a refusal, so a transient-looking failure may well have
+        // delivered. The caller decides whether to try again, knowing what it already said.
 
         services.AddSingleton<IMediaStore, FileSystemMediaStore>();
         services.AddSingleton<IStagedMediaReader, StagedMediaReader>();

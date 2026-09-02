@@ -87,6 +87,10 @@ services:
       # Paths outside it are refused; see StagedMediaReader.
       # Mounted at the identical path the gateway uses, so a path the agent passes needs no translation.
       StagedMedia__RootPath: /config/workspace/media/inbound
+      # The gateway, for messages nobody asked for — a candidate summary arriving from Recruitment-API.
+      # Traffic was one-way until now (gateway -> Justina over MCP), so the app held no gateway token.
+      OpenClawGateway__BaseUrl: http://justina-openclaw:18789
+      OpenClawGateway__Token: ${OPENCLAW_GATEWAY_TOKEN}
     volumes:
       - justina-media:/var/justina/media
       # Read-only, and only the inbound attachment directory — not the whole gateway state volume, which

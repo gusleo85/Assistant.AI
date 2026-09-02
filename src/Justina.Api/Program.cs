@@ -1,5 +1,6 @@
 using Justina.Api.Hosting;
 using Justina.Api.Mock;
+using Justina.Api.Notifications;
 using Justina.Api.Security;
 using Justina.Api.Tools;
 using ModelContextProtocol.Server;
@@ -70,6 +71,10 @@ builder.Services.AddRecruitmentInfrastructure(builder.Configuration);
 
 builder.Services.AddScoped<RequestContextFactory>();
 
+// Who recruitment messages go to. One seam, one implementation today — the seeded principal — so
+// mapping hiring managers to their own chat accounts later touches nothing but this line.
+builder.Services.AddScoped<IRecruitmentRecipientResolver, SeededPrincipalRecipientResolver>();
+
 // OpenClaw reaches Justina over MCP — it has no configuration for calling a plain HTTP JSON API.
 // The REST endpoints under /tools stay for testing and non-MCP clients; both funnel into the same
 // commands and queries, so authorization and state cannot diverge between them.
@@ -115,6 +120,7 @@ app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => fa
 // Readiness is the one that covers dependencies (§25).
 app.MapHealthChecks("/health/ready");
 app.MapToolEndpoints();
+app.MapNotificationEndpoints();
 app.MapMcp("/mcp");
 
 // A stand-in for the Expense endpoint that does not exist yet. Only mounted when the submission seam is
