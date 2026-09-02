@@ -71,11 +71,11 @@ blank, and nothing else.
 
 ## Recruitment-UI
 
-- [ ] **U1** "Send Candidate Summary" button beside *Generate Interview Questions* — same `isAiEnabled` guard, same `isInActiveUser` disable
-- [ ] **U2** Endpoint constant + service method for `send-summary`
-- [ ] **U3** Success toast naming who was messaged; failure surfaced through the existing toaster
-- [ ] **U4** Move `getCandidateStatus()` to `PUT` when A4 lands, and rename it — it has never been a getter
-- [ ] **U5** Translation key alongside `Generate_Interview_Questions`
+- [~] **U1** Button added beside *Interview Question Recommendation*, same `isAiEnabled` guard and `isInActiveUser` disable, plus disabled while a send is in flight
+- [~] **U2** `sendCandidateSummary` endpoint constant and service method added
+- [~] **U3** Success toast names the candidate summarised; failure says so rather than failing quietly
+- [~] **U4** `getCandidateStatus` → `updateCandidateStatus`, now a PUT. Four call sites and their specs moved; the list service's identically named dropdown lookup is untouched and genuinely is a GET
+- [~] **U5** Three keys added to all four locales (en, fr, zh, zh-HK), JSON validated
 
 ## Verification
 
@@ -89,6 +89,8 @@ blank, and nothing else.
 - [ ] **V8** Full suites green in all three repos
 
 ## Open
+
+- [!] **Q4** The UI cannot be built on this machine: the project is Angular 13 and Node here is 24, so `npm install` fails with "Cannot read properties of null". Every U task is therefore implemented but uncompiled. Needs a build on a machine with Node 14 or 16, or a `.nvmrc`
 
 - [ ] **Q1** Does any client outside these repositories call `Candidate/{id}/Status`? Decides whether A4 keeps the deprecated GET
 - [!] **Q2** Which user GUID is the service account, and does it exist in dev? Code is in and refuses clearly while unset (`Assistant:ServiceAccountUserGuid`); nothing system-triggered can schedule or change status until it is
