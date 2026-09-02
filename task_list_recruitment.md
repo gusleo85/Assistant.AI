@@ -46,13 +46,13 @@ blank, and nothing else.
 
 ## Recruitment-API
 
-- [ ] **A1** `IRecruitmentAiService.GenerateCandidateSummary(candidateId)` beside `GenerateInterviewQuestions`, reading the CV and candidate record
-- [ ] **A2** `POST candidates/{candidateId}/send-summary` — generates the summary, posts it to Justina; `[AuthorizeUserRoleAttribute("admins, system_token")]`, following the `Candidate/chatbot/query` precedent
-- [ ] **A3** Service-account identity: configured user GUID used when `TokenData.UserGUID` is absent, so schedule and status have a valid actor without the caller supplying one
-- [ ] **A4** `Candidate/{candidateId}/Status` → `PUT`, with the deprecation path above
-- [ ] **A5** Confirm `InterviewSchedule` accepts a system token with the service-account identity; extend if not
-- [ ] **A6** Unit tests: summary generation, system-token authorization, service-account fallback, status verb
-- [ ] **A7** Verify no existing recruitment test regresses
+- [x] **A1** `ICandidateSummaryService.BuildSummary` — composed from the candidate record and the CV that AI parsing already extracted. Its own service rather than a method on `IRecruitmentAiService`: no model is called, because the parsing already happened and its output is stored. Swapping in written prose later is one method
+- [x] **A2** `POST candidates/{candidateId}/send-summary` — generates the summary, posts it to Justina; `[AuthorizeUserRoleAttribute("admins, system_token")]`, following the `Candidate/chatbot/query` precedent
+- [x] **A3** Service-account identity: configured user GUID used when `TokenData.UserGUID` is absent, so schedule and status have a valid actor without the caller supplying one
+- [x] **A4** `PUT Candidate/{candidateId}/Status` added; the GET kept and marked `[Obsolete]`, delegating to it — existing callers unaffected
+- [x] **A5** Confirm `InterviewSchedule` accepts a system token with the service-account identity; extend if not
+- [x] **A6** 9 unit tests: summary composition, the no-CV path, identifiers carried, unknown candidate, delivery, and the acting-user rules
+- [x] **A7** No regression: the suite fails 176 tests on the branch point too (integration tests wanting a live API and database). Verified by stashing. The 9 new ones are the only passing tests either way
 
 ## Justina (Assistant.AI)
 
@@ -91,5 +91,5 @@ blank, and nothing else.
 ## Open
 
 - [ ] **Q1** Does any client outside these repositories call `Candidate/{id}/Status`? Decides whether A4 keeps the deprecated GET
-- [ ] **Q2** Which user GUID is the service account, and does it exist in dev?
-- [ ] **Q3** Which hiring stage does a scheduled interview attach to — the candidate's current active stage, or does HR pick?
+- [!] **Q2** Which user GUID is the service account, and does it exist in dev? Code is in and refuses clearly while unset (`Assistant:ServiceAccountUserGuid`); nothing system-triggered can schedule or change status until it is
+- [x] **Q3** Answered: the candidate's current active stage. The summary carries `stageId` from the candidate record
