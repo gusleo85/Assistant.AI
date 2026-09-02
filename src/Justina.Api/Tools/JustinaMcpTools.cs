@@ -279,6 +279,50 @@ public static class JustinaMcpTools
                     location),
                 cancellationToken));
 
+    [McpServerTool(Name = "justina_recruitment_schedule_interview", Destructive = false, Idempotent = false, OpenWorld = true)]
+    [Description(
+        "Book an interview for the candidate whose summary this person was last sent. Call this only "
+        + "when they have given a date and a time. Everything else — who interviews, the medium, the "
+        + "length — comes from the hiring stage; never ask for those and never invent them. Do not "
+        + "guess a date: if they said something vague like 'next week', ask which day and what time.")]
+    public static Task<string> ScheduleInterviewAsync(
+        RequestContextFactory contexts,
+        IDispatcher dispatcher,
+        [Description("Channel the message arrived on: telegram or whatsapp.")] string channel,
+        [Description("The channel's own numeric user id for the person speaking.")] string userId,
+        [Description("The channel's own chat/conversation id.")] string conversationId,
+        [Description("Interview date as yyyy-MM-dd, resolved from what they said.")] string date,
+        [Description("Interview start time as HH:mm, 24-hour.")] string time,
+        CancellationToken cancellationToken) =>
+        RunAsync<InterviewBooked>(
+            contexts,
+            Envelope(channel, userId, conversationId),
+            cancellationToken,
+            context => dispatcher.SendAsync(
+                new ScheduleInterviewCommand(context, date, time),
+                cancellationToken));
+
+    [McpServerTool(Name = "justina_recruitment_update_status", Destructive = true, Idempotent = false, OpenWorld = true)]
+    [Description(
+        "Shortlist or reject the candidate whose summary this person was last sent. Use only when they "
+        + "clearly decided — 'shortlist', 'reject', 'not for us'. A rejection cannot be undone from "
+        + "chat, so if their wording is ambiguous, ask before calling this.")]
+    public static Task<string> UpdateCandidateStatusAsync(
+        RequestContextFactory contexts,
+        IDispatcher dispatcher,
+        [Description("Channel the message arrived on: telegram or whatsapp.")] string channel,
+        [Description("The channel's own numeric user id for the person speaking.")] string userId,
+        [Description("The channel's own chat/conversation id.")] string conversationId,
+        [Description("Their decision: shortlist or reject.")] string decision,
+        CancellationToken cancellationToken) =>
+        RunAsync<string>(
+            contexts,
+            Envelope(channel, userId, conversationId),
+            cancellationToken,
+            context => dispatcher.SendAsync(
+                new UpdateCandidateStatusCommand(context, decision),
+                cancellationToken));
+
     private static ToolEnvelope Envelope(string channel, string userId, string conversationId, string? messageId = null) =>
         new(channel, userId, conversationId, messageId);
 

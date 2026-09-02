@@ -12,11 +12,25 @@ public static class Capabilities
     public const string ExpenseRead = "expense.read";
     public const string RecruitmentSearch = "recruitment.search";
 
+    /// <summary>Book an interview in the recruitment system.</summary>
+    public const string RecruitmentSchedule = "recruitment.schedule";
+
+    /// <summary>
+    /// Change a candidate's status — shortlist, reject.
+    ///
+    /// Separate from scheduling on purpose: booking a slot is reversible and visible to everyone
+    /// involved, while rejecting someone is neither. A person trusted to arrange interviews has not
+    /// thereby been trusted to end applications.
+    /// </summary>
+    public const string RecruitmentStatus = "recruitment.status";
+
     public static readonly IReadOnlyCollection<string> All =
     [
         ExpenseSubmit,
         ExpenseRead,
         RecruitmentSearch,
+        RecruitmentSchedule,
+        RecruitmentStatus,
     ];
 }
 

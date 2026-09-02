@@ -67,6 +67,12 @@ public static class RecruitmentApplicationServiceCollectionExtensions
     public static IServiceCollection AddRecruitmentApplication(this IServiceCollection services)
     {
         services.AddQueryHandler<SearchCandidatesQuery, CandidateSearchResult, SearchCandidatesQueryHandler>();
+
+        // The two things a hiring manager can ask for once they have read a candidate summary.
+        services.AddCommandHandler<ScheduleInterviewCommand, InterviewBooked, ScheduleInterviewCommandHandler>();
+        services.AddCommandHandler<UpdateCandidateStatusCommand, string, UpdateCandidateStatusCommandHandler>();
+        services.AddScoped<RecruitmentConversationService>();
+
         return services;
     }
 }

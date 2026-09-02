@@ -61,11 +61,11 @@ blank, and nothing else.
 - [x] **J3** `IRecruitmentRecipientResolver`, resolving to the seeded principal. No new configuration: principals already hold the linked Telegram id, and a second copy of it is how a summary reaches a stranger
 - [x] **J4** `CandidateSummary` aggregate: `Deferred → Sent → Scheduled / StatusUpdated`, plus `Failed` / `Cancelled`. Stores the message that was sent and the ids needed to act on the reply — candidate, opening, stage — and nothing else about the candidate
 - [x] **J5** Deferral verified live: summary arrived mid-receipt → held; receipt closed → swept out 30s later as message 52. Recruitment reads `ActiveWorkflow` and never writes it
-- [ ] **J6** `IRecruitmentApiClient` — schedule and status against Recruitment-API, company token via the existing provider (rename it: no longer expense-specific)
-- [ ] **J7** Interview payload assembled from hiring-stage defaults; only unresolved fields are asked for
-- [ ] **J8** MCP tools: `justina_recruitment_send_summary`, `_schedule_interview`, `_update_status`
-- [ ] **J9** Capabilities `recruitment.schedule` / `recruitment.status`, distinct from the expense ones
-- [ ] **J10** `AGENTS.md` recruitment section, with the receipt-outranks-recruitment rule stated explicitly
+- [~] **J6** `IRecruitmentScheduler` — stage defaults, schedule, status (PUT). Token from configuration for now: minting a company token means the identity client, which lives behind expense infrastructure, and recruitment must not depend on expense
+- [~] **J7** Payload built from stage defaults; a stage missing interviewer, medium or duration is refused with what is missing named, never invented
+- [~] **J8** `justina_recruitment_schedule_interview` and `_update_status`. No `send_summary` tool: summaries arrive from Recruitment-API, so the agent has nothing to call
+- [x] **J9** `recruitment.schedule` and `recruitment.status`, separate from each other: booking a slot is reversible, rejecting someone is not
+- [x] **J10** `AGENTS.md`: the summary reply flow, and the receipt-outranks-recruitment rule stated in the routing section as well as the recruitment one
 - [x] **J11** `AddCandidateSummaries` — one new table, nothing else touched
 - [ ] **J12** Idempotency: a double-clicked button sends one message; a repeated "Thursday 2pm" books one interview
 
@@ -93,5 +93,7 @@ blank, and nothing else.
 - [!] **Q4** The UI cannot be built on this machine: the project is Angular 13 and Node here is 24, so `npm install` fails with "Cannot read properties of null". Every U task is therefore implemented but uncompiled. Needs a build on a machine with Node 14 or 16, or a `.nvmrc`
 
 - [ ] **Q1** Does any client outside these repositories call `Candidate/{id}/Status`? Decides whether A4 keeps the deprecated GET
+- [!] **Q5** Which status codes mean shortlist and reject? `RecruitmentApi:ShortlistStatus` / `RejectStatus` are unset, so a decision is refused rather than guessed — an invented code moves a candidate somewhere nobody asked for, and the API would accept it. `dropdowns/CandidateStatus` has the list
+- [!] **Q6** Recruitment-API base URL and credential for Justina (`RecruitmentApi:BaseUrl` / `ApiKey`). Until both are set, scheduling and status report that the recruitment system is not configured
 - [!] **Q2** Which user GUID is the service account, and does it exist in dev? Code is in and refuses clearly while unset (`Assistant:ServiceAccountUserGuid`); nothing system-triggered can schedule or change status until it is
 - [x] **Q3** Answered: the candidate's current active stage. The summary carries `stageId` from the candidate record

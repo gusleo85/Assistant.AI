@@ -20,6 +20,30 @@ public sealed class RecruitmentApiOptions
     public string ApiKey { get; set; } = string.Empty;
 
     public int TimeoutSeconds { get; set; } = 30;
+
+    /// <summary>The stage's interview defaults. <c>{0}</c> job opening, <c>{1}</c> stage.</summary>
+    public string HiringStagePath { get; set; } = "v1/JobOpening/{0}/HiringStage/{1}";
+
+    /// <summary><c>{0}</c> candidate, <c>{1}</c> job opening, <c>{2}</c> stage.</summary>
+    public string InterviewSchedulePath { get; set; } =
+        "v1/Candidate/{0}/JobOpening/{1}/HiringStage/{2}/InterviewSchedule";
+
+    /// <summary>
+    /// <c>{0}</c> candidate, <c>{1}</c> status. Sent with PUT — the API kept its older GET for clients
+    /// that still call it, but a status change is a write.
+    /// </summary>
+    public string CandidateStatusPath { get; set; } = "v1/Candidate/{0}/Status?status={1}";
+
+    /// <summary>
+    /// The status codes this recruitment system uses. They are configuration because they are the
+    /// recruitment system's numbers, not ours, and because a model must never be the thing that turns
+    /// "no" into a code — the wrong one rejects a candidate nobody rejected.
+    ///
+    /// Unset means the decision cannot be applied, and the assistant says so rather than guessing.
+    /// </summary>
+    public int? ShortlistStatus { get; set; }
+
+    public int? RejectStatus { get; set; }
 }
 
 /// <summary>
@@ -62,6 +86,29 @@ public static class RecruitmentInfrastructureServiceCollectionExtensions
         services.AddSingleton<IModelConfiguration, RecruitmentModelConfiguration>();
         services.AddScoped<ICandidateSummaryRepository, CandidateSummaryRepository>();
         services.AddScoped<IConversationAvailability, ConversationAvailability>();
+        services.AddScoped<IRecruitmentAccessTokenProvider, ConfiguredRecruitmentAccessTokenProvider>();
+        // Supplied as a plain object rather than IOptions: the application layer must not read
+        // configuration, and these are its numbers to be told, not to look up.
+        var recruitmentApi = configuration.GetSection(RecruitmentApiOptions.SectionName).Get<RecruitmentApiOptions>()
+            ?? new RecruitmentApiOptions();
+
+        services.AddSingleton(new CandidateStatusCodes
+        {
+            Shortlist = recruitmentApi.ShortlistStatus,
+            Reject = recruitmentApi.RejectStatus,
+        });
+
+        services.AddHttpClient<IRecruitmentScheduler, RecruitmentScheduler>((provider, client) =>
+        {
+            var api = provider.GetRequiredService<IOptions<RecruitmentApiOptions>>().Value;
+
+            if (!string.IsNullOrWhiteSpace(api.BaseUrl))
+            {
+                client.BaseAddress = new Uri($"{api.BaseUrl.TrimEnd('/')}/");
+            }
+
+            client.Timeout = TimeSpan.FromSeconds(api.TimeoutSeconds);
+        });
         services.AddScoped<CandidateSummaryService>();
         services.AddHostedService<DeferredSummaryReleaseService>();
 
