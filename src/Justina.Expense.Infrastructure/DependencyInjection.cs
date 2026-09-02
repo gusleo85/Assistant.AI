@@ -215,6 +215,28 @@ public static class ExpenseInfrastructureServiceCollectionExtensions
             return;
         }
 
+        // Mock asks the membership endpoint over real HTTP with the system token — the same request a
+        // real membership route would take, answered for now by Justina's own stand-in, because nothing
+        // in JustLogin maps a Telegram id to a member yet (R12).
+        if (options.ResolvedTenantMode == ExpenseApiMode.Mock)
+        {
+            services
+                .AddHttpClient<IExpenseTenantResolver, MembershipExpenseTenantResolver>((provider, client) =>
+                {
+                    var current = provider.GetRequiredService<IOptions<ExpenseApiOptions>>().Value;
+
+                    if (!string.IsNullOrWhiteSpace(current.ResolvedMembershipBaseUrl))
+                    {
+                        client.BaseAddress = new Uri($"{current.ResolvedMembershipBaseUrl.TrimEnd('/')}/");
+                    }
+
+                    client.Timeout = TimeSpan.FromSeconds(current.TimeoutSeconds);
+                })
+                .AddStandardResilienceHandler();
+
+            return;
+        }
+
         services.AddScoped<IExpenseTenantResolver, ConfiguredExpenseTenantResolver>();
     }
 
@@ -226,23 +248,15 @@ public static class ExpenseInfrastructureServiceCollectionExtensions
             return;
         }
 
-        // Mock speaks the chat-scan contract over real HTTP to a stand-in endpoint, so the payload is
-        // genuinely built, authenticated, sent and parsed — only the far end is fake.
-        if (options.ResolvedSubmissionMode == ExpenseApiMode.Mock)
-        {
-            services
-                .AddHttpClient<IExpenseApiClient, ChatScanExpenseApiClient>((provider, client) =>
-                    Configure(client, provider.GetRequiredService<IOptions<ExpenseApiOptions>>().Value))
-                .AddStandardResilienceHandler();
-
-            return;
-        }
-
+        // Mock and Live both speak the chat-scan contract; the only difference is where BaseUrl points.
+        // That is the point of the mock — the payload is genuinely built, authenticated, sent and
+        // parsed, and only the far end changes when it goes live.
         services
-            .AddHttpClient<IExpenseApiClient, ExpenseApiClient>((provider, client) =>
+            .AddHttpClient<IExpenseApiClient, ChatScanExpenseApiClient>((provider, client) =>
                 Configure(client, provider.GetRequiredService<IOptions<ExpenseApiOptions>>().Value))
-            // Retries transient failures only. The submission carries an idempotency key, so a retry that
-            // the API already processed resolves to the same expense rather than a second one (§33).
+            // Retries transient failures only. The submission carries an idempotency key, and a receipt
+            // already created is reused rather than created again, so a retry cannot produce a second
+            // expense (§33).
             .AddStandardResilienceHandler();
     }
 

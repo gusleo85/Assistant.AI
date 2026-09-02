@@ -113,6 +113,26 @@ public sealed class ExpenseApiOptions
     public string ReceiptUpdatePath { get; set; } = "expense/v1/Receipt/update";
 
     /// <summary>
+    /// Where a channel identity becomes a member. <c>{0}</c> is the channel, <c>{1}</c> the channel's own
+    /// user id.
+    /// </summary>
+    public string MemberInfoPath { get; set; } = "membership/v1/Member/info?channel={0}&userId={1}";
+
+    /// <summary>
+    /// Base address for the membership calls, when it differs from <see cref="BaseUrl"/>.
+    ///
+    /// It usually does today: the expense endpoints are the real ones on the JustLogin estate, while no
+    /// membership route maps a Telegram id to a member yet, so that lookup goes to Justina's own
+    /// stand-in. One address for both would force the two to move together, and they are not ready
+    /// together.
+    /// </summary>
+    public string MembershipBaseUrl { get; set; } = string.Empty;
+
+    /// <summary>The membership address actually used: its own when set, otherwise the Expense API's.</summary>
+    public string ResolvedMembershipBaseUrl =>
+        string.IsNullOrWhiteSpace(MembershipBaseUrl) ? BaseUrl : MembershipBaseUrl;
+
+    /// <summary>
     /// How long a company's catalogue is reused. The Lambda re-reads it per event because it is
     /// short-lived; Justina is long-lived and would otherwise re-read it for every photo.
     /// </summary>

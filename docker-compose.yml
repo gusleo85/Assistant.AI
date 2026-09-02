@@ -66,6 +66,10 @@ services:
       # The three IdentitySDK values below are secrets and come from .env, never from this file.
       ExpenseApi__IdentityMode: ${EXPENSE_API_IDENTITY_MODE:-}
       ExpenseApi__MembershipMode: ${EXPENSE_API_MEMBERSHIP_MODE:-}
+      # Where a Telegram id becomes a member. Separate from BaseUrl because the expense endpoints are
+      # live on the JustLogin estate while this lookup is still Justina's own stand-in — nothing there
+      # maps a channel id to a member yet.
+      ExpenseApi__MembershipBaseUrl: ${EXPENSE_MEMBERSHIP_URL:-}
       JLHttpClient__BaseUrl: ${JL_HTTP_CLIENT_URL:-}
       IdentitySDK__ClientID: ${IDENTITY_CLIENT_ID:-}
       IdentitySDK__ClientSecret: ${IDENTITY_CLIENT_SECRET:-}
