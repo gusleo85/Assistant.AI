@@ -1,5 +1,8 @@
 using Justina.Core.Domain.Results;
+using Justina.Core.Application.Abstractions;
+using Justina.Core.Infrastructure.Persistence;
 using Justina.Recruitment.Application;
+using Justina.Recruitment.Infrastructure.Persistence;
 using Justina.Recruitment.Domain;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -53,6 +56,14 @@ public static class RecruitmentInfrastructureServiceCollectionExtensions
     {
         services.Configure<RecruitmentApiOptions>(configuration.GetSection(RecruitmentApiOptions.SectionName));
         services.AddScoped<IRecruitmentApiClient, RecruitmentApiClient>();
+
+        // Candidate summaries: stored, deferred while their recipient is busy, and swept out when they
+        // are free again.
+        services.AddSingleton<IModelConfiguration, RecruitmentModelConfiguration>();
+        services.AddScoped<ICandidateSummaryRepository, CandidateSummaryRepository>();
+        services.AddScoped<IConversationAvailability, ConversationAvailability>();
+        services.AddScoped<CandidateSummaryService>();
+        services.AddHostedService<DeferredSummaryReleaseService>();
 
         return services;
     }

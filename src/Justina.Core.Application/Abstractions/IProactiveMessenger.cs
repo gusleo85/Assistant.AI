@@ -3,8 +3,13 @@ using Justina.Core.Domain.Results;
 
 namespace Justina.Core.Application.Abstractions;
 
-/// <summary>Who a proactive message goes to, in the channel's own terms.</summary>
-public sealed record ChannelRecipient(ChannelKind Channel, string UserId);
+/// <summary>
+/// Who a proactive message goes to, in the channel's own terms.
+///
+/// <see cref="DisplayName"/> is carried so a message can greet someone by name. It is optional: a
+/// principal seeded without one is addressed impersonally rather than as "Hello ,".
+/// </summary>
+public sealed record ChannelRecipient(ChannelKind Channel, string UserId, string? DisplayName = null);
 
 /// <summary>
 /// Sends a message to someone who did not just write to us.

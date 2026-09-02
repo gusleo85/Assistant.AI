@@ -13,14 +13,14 @@ namespace Justina.Core.Infrastructure.Persistence;
 /// </summary>
 public sealed class PrincipalDirectory(JustinaDbContext context) : IPrincipalDirectory
 {
-    public async Task<string?> GetPrimaryUserIdAsync(ChannelKind channel, CancellationToken cancellationToken)
+    public async Task<PrincipalIdentity?> GetPrimaryAsync(ChannelKind channel, CancellationToken cancellationToken)
     {
         return await context.Principals
             .AsNoTracking()
             .Where(principal => principal.Channel == channel)
             .OrderBy(principal => principal.DisplayName)
             .ThenBy(principal => principal.UserId)
-            .Select(principal => principal.UserId)
+            .Select(principal => new PrincipalIdentity(principal.UserId, principal.DisplayName))
             .FirstOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
     }

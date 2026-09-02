@@ -1,6 +1,6 @@
 using Justina.Core.Application.Abstractions;
 using Justina.Core.Domain.Messaging;
-using Justina.Expense.Application.Abstractions;
+using Justina.Recruitment.Application;
 
 namespace Justina.Api.Notifications;
 
@@ -45,15 +45,17 @@ public static class CandidateSummaryEndpoint
     private static async Task<IResult> SendAsync(
         CandidateSummaryNotification notification,
         IRecruitmentRecipientResolver recipients,
-        IProactiveMessenger messenger,
+        CandidateSummaryService summaries,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
         var logger = loggerFactory.CreateLogger("CandidateSummary");
 
-        if (notification is null || string.IsNullOrWhiteSpace(notification.SummaryText))
+        if (notification is null
+            || string.IsNullOrWhiteSpace(notification.SummaryText)
+            || string.IsNullOrWhiteSpace(notification.CandidateId))
         {
-            return Results.BadRequest(new { message = "A summary is required." });
+            return Results.BadRequest(new { message = "A summary and a candidate are required." });
         }
 
         var recipient = await recipients.ResolveAsync(cancellationToken).ConfigureAwait(false);
@@ -69,46 +71,39 @@ public static class CandidateSummaryEndpoint
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
 
-        var sent = await messenger
-            .SendAsync(recipient.Value, Compose(notification), cancellationToken)
+        var outcome = await summaries
+            .ReceiveAsync(
+                recipient.Value,
+                new CandidateSummaryRequest(
+                    notification.CandidateId,
+                    notification.JobOpeningId,
+                    notification.StageId,
+                    notification.CandidateName,
+                    notification.JobTitle,
+                    notification.SummaryText,
+                    notification.CompanyId),
+                cancellationToken)
             .ConfigureAwait(false);
 
-        if (sent.IsFailure)
+        if (outcome.IsFailure)
         {
             // Reported, not swallowed. The manager pressed a button and is owed the truth about whether
             // anything reached anyone.
             return Results.Json(
-                new { message = sent.Error.Message },
+                new { message = outcome.Error.Message },
                 statusCode: StatusCodes.Status502BadGateway);
         }
 
-        logger.LogInformation(
-            "Sent the summary of candidate {CandidateId} to {Channel} user {UserId}",
-            notification.CandidateId,
-            recipient.Value.Channel,
-            recipient.Value.UserId);
-
+        // Deferred is a success: the summary is recorded and will be delivered when its recipient has
+        // finished what they were doing. Saying so in the response is what lets the caller tell a
+        // hiring manager "shortly" rather than "sent".
         return Results.Accepted(value: new
         {
+            summaryId = outcome.Value.SummaryId,
             candidateId = notification.CandidateId,
             channel = recipient.Value.Channel.ToString(),
+            state = outcome.Value.State,
         });
-    }
-
-    /// <summary>
-    /// Builds the message the hiring manager reads.
-    ///
-    /// The summary is quoted as it arrived and the question is ours, kept separate and last. Nothing
-    /// rewrites or interprets the summary here — this endpoint is a courier, and the agent that handles
-    /// the reply is where judgement belongs.
-    /// </summary>
-    private static string Compose(CandidateSummaryNotification notification)
-    {
-        var question = string.IsNullOrWhiteSpace(notification.CandidateName)
-            ? "When would you like to interview them?"
-            : $"When would you like to interview {notification.CandidateName}?";
-
-        return $"{notification.SummaryText}\n\n{question}";
     }
 }
 
@@ -141,11 +136,11 @@ public sealed class SeededPrincipalRecipientResolver(
 {
     public async Task<Core.Domain.Results.Result<ChannelRecipient>> ResolveAsync(CancellationToken cancellationToken)
     {
-        var userId = await principals
-            .GetPrimaryUserIdAsync(ChannelKind.Telegram, cancellationToken)
+        var principal = await principals
+            .GetPrimaryAsync(ChannelKind.Telegram, cancellationToken)
             .ConfigureAwait(false);
 
-        if (string.IsNullOrWhiteSpace(userId))
+        if (principal is null || string.IsNullOrWhiteSpace(principal.UserId))
         {
             return Core.Domain.Results.Result.Failure<ChannelRecipient>(
                 Core.Domain.Results.ErrorCodes.NotAvailable,
@@ -154,8 +149,9 @@ public sealed class SeededPrincipalRecipientResolver(
 
         // Logged at Information because "who did that summary go to" is the first question anyone will
         // ask, and today the answer is "whoever happens to be seeded".
-        logger.LogInformation("Recruitment messages resolve to Telegram user {UserId}", userId);
+        logger.LogInformation("Recruitment messages resolve to Telegram user {UserId}", principal.UserId);
 
-        return Core.Domain.Results.Result.Success(new ChannelRecipient(ChannelKind.Telegram, userId));
+        return Core.Domain.Results.Result.Success(
+            new ChannelRecipient(ChannelKind.Telegram, principal.UserId, principal.DisplayName));
     }
 }

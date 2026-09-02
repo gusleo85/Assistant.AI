@@ -59,14 +59,14 @@ blank, and nothing else.
 - [x] **J1** `POST /notifications/candidate-summary`, behind the same shared secret as the tool surface. Summary relayed verbatim; the question Justina appends is kept separate and last
 - [x] **J2** `IProactiveMessenger` over the gateway tool-invoke API. Verified live: message 51 delivered to Telegram
 - [x] **J3** `IRecruitmentRecipientResolver`, resolving to the seeded principal. No new configuration: principals already hold the linked Telegram id, and a second copy of it is how a summary reaches a stranger
-- [ ] **J4** `CandidateSummary` aggregate: `Sent → AwaitingAvailability → Scheduling → Scheduled`, plus `StatusUpdated` / `Cancelled`
-- [ ] **J5** Deferral: a recruitment event arriving while a receipt is in `WaitingConfirmation` is **queued, never dropped and never overwriting** `ActiveWorkflow`; resumed when the receipt finishes
+- [x] **J4** `CandidateSummary` aggregate: `Deferred → Sent → Scheduled / StatusUpdated`, plus `Failed` / `Cancelled`. Stores the message that was sent and the ids needed to act on the reply — candidate, opening, stage — and nothing else about the candidate
+- [x] **J5** Deferral verified live: summary arrived mid-receipt → held; receipt closed → swept out 30s later as message 52. Recruitment reads `ActiveWorkflow` and never writes it
 - [ ] **J6** `IRecruitmentApiClient` — schedule and status against Recruitment-API, company token via the existing provider (rename it: no longer expense-specific)
 - [ ] **J7** Interview payload assembled from hiring-stage defaults; only unresolved fields are asked for
 - [ ] **J8** MCP tools: `justina_recruitment_send_summary`, `_schedule_interview`, `_update_status`
 - [ ] **J9** Capabilities `recruitment.schedule` / `recruitment.status`, distinct from the expense ones
 - [ ] **J10** `AGENTS.md` recruitment section, with the receipt-outranks-recruitment rule stated explicitly
-- [ ] **J11** EF migration for the new tables — additive only, `Receipts` untouched
+- [x] **J11** `AddCandidateSummaries` — one new table, nothing else touched
 - [ ] **J12** Idempotency: a double-clicked button sends one message; a repeated "Thursday 2pm" books one interview
 
 ## Recruitment-UI
