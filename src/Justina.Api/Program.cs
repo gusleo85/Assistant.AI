@@ -18,6 +18,32 @@ using OpenTelemetry.Trace;
 using Serilog;
 using Serilog.Events;
 
+// A failed startup must end the process, and in a container it does not do so on its own.
+//
+// The app is PID 1 there, and PID 1 is exempt from the default action of any signal it has not handled.
+// When the runtime meets an unhandled exception it calls abort(), which raises SIGABRT — ignored, because
+// PID 1 — so abort() raises it again, forever. What that looks like from outside is a container that
+// started, printed a stack trace, never exited, and pinned a core: 15 hours and five CPU-hours in the one
+// case we saw. An orchestrator watching it sees a process that started and never crashed, so it never
+// restarts it and never alerts. It simply never serves.
+//
+// Startup validation elsewhere is deliberately fail-fast — a stub seam in Production, a live seam with no
+// address, missing identity credentials all throw here rather than let a misconfigured deployment quietly
+// file nothing. That design assumes the process actually dies, so this is what makes it true. Exit()
+// unwinds normally and sets an exit code; FailFast would abort and land straight back in the same loop.
+AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+{
+    var exception = args.ExceptionObject as Exception;
+
+    // Serilog may not be configured yet — a configuration error throws before the host is built — so the
+    // message goes to stderr as well. A fatal error nobody can read is not much of a fatal error.
+    Console.Error.WriteLine($"FATAL: {exception}");
+    Log.Logger.Fatal(exception, "Justina is stopping: unhandled exception");
+    Log.CloseAndFlush();
+
+    Environment.Exit(1);
+};
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Structured JSON to stdout: the container runtime is the log sink (§40).

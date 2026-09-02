@@ -30,6 +30,11 @@ services:
       context: .
       dockerfile: src/Justina.Api/Dockerfile
     container_name: justina-app
+    # Runs an init as PID 1 so the app is an ordinary child. PID 1 is exempt from the default action of
+    # unhandled signals, which is why a crashing app can spin forever instead of dying; the handler in
+    # Program.cs covers the case we hit, and this covers the ones it cannot see — a hard abort in a
+    # native library, a SIGSEGV, anything the runtime does not route through UnhandledException.
+    init: true
     depends_on:
       justina-sqlserver:
         condition: service_healthy
